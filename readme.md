@@ -2,6 +2,8 @@
 
 # 🌍 Language Translation App using CHATGPT 🗣️
 
+<p align="center"><img src="https://media.discordapp.net/attachments/585069498986397707/1064699087431143516/gamedfdsf.gif?width=374&height=671" width=300></p>
+
 This app utilizes the power of the CHATGPT language model to provide real-time translation of text input in Thai and English.
 
 - Support for Thai and English languages
