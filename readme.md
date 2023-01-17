@@ -1,6 +1,6 @@
 <p align="center"><img src="src\icon.ico" width=50></p>
 
-# Language Translation App using CHATGPT
+# 🌍 Language Translation App using CHATGPT 🗣️
 
 This app utilizes the power of the CHATGPT language model to provide real-time translation of text input in Thai and English.
 
