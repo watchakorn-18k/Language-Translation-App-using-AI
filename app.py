@@ -2,14 +2,14 @@ import flet as ft
 
 
 def main(page: ft.Page):
-    page.title = "แอพแปลภาษาด้วย CHATGPT"
+    page.title = "แอพแปลภาษาด้วย CHATGPT | wk-18k"
     window_width, window_height = (400, 725)
     page.window_width = window_width
     page.window_height = window_height
     page.window_always_on_top = True
     page.window_skip_task_bar = True
-    input_text = ft.TextField(width=200)
-    pr = ft.ProgressBar(width=200)
+    input_text = ft.TextField()
+    pr = ft.ProgressBar()
     pr.value = 0
 
     def translating(e):
@@ -20,12 +20,12 @@ def main(page: ft.Page):
             import openai
             import re
 
-            # เข้ารหัส API key
+            # ใส่ token คีย์ API
             openai.api_key = "API key for the CHATGPT"
 
             model_engine = "text-davinci-003"
 
-            # Generate a response
+            # สร้างตัวตอบกลับ
             completion = openai.Completion.create(
                 engine=model_engine,
                 prompt=f"{data} translate to write in words english",
@@ -51,9 +51,9 @@ def main(page: ft.Page):
             result2.value = "กรอกข้อความลงในช่องป้อนข้อมูล"
             page.update()
 
-    cal_btn = ft.ElevatedButton(text="แปลภาษา", width=200, on_click=translating)
-    result = ft.Text("", width=150)
-    result2 = ft.Text("", width=150)
+    cal_btn = ft.ElevatedButton(text="แปลภาษา", width=300, on_click=translating)
+    result = ft.Text("", width=250)
+    result2 = ft.Text("", width=250)
 
     def copying(e):
         page.set_clipboard(result.value)
@@ -94,14 +94,17 @@ def main(page: ft.Page):
             [
                 ft.Column(
                     [
-                        ft.Text(value="แอพแปลภาษาด้วย CHATGPT", text_align="center"),
+                        ft.Text(
+                            value="แอพแปลภาษาด้วย CHATGPT dev wk-18k",
+                            text_align="center",
+                        ),
                         input_text,
                         cal_btn,
                         pr,
                         content,
                         content2,
                     ],
-                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment="center",
                 )
             ],
             alignment=ft.MainAxisAlignment.CENTER,
