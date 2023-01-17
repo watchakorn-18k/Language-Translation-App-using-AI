@@ -7,9 +7,9 @@ def main(page: ft.Page):
     page.window_width = window_width
     page.window_height = window_height
     page.window_always_on_top = True
-    page.window_skip_task_bar = True
+    # page.window_skip_task_bar = True
     input_text = ft.TextField()
-    pr = ft.ProgressBar()
+    pr = ft.ProgressBar(width=300)
     pr.value = 0
 
     def translating(e):
