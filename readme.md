@@ -19,6 +19,7 @@ This app utilizes the power of the CHATGPT language model to provide real-time t
 
 1. Run Application 1 time
 2. Then go to file `apikey.json` and insert the API KEY, get it from [https://beta.openai.com/](https://beta.openai.com/), then save and close the file.
+   ![img](https://cdn.discordapp.com/attachments/585068497495654413/1067831416995455067/gamedfdsf.gif)
 3. Run Application
 4. Enter text in any language in the text field.
 5. Press the <img src="https://media.discordapp.net/attachments/585068497495654413/1067750218969399426/image-removebg-preview.png" width="30"> button to get the translated text
