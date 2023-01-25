@@ -36,7 +36,7 @@ def main(page: ft.Page):
         tooltip="เลือกภาษาที่จะ OCR",
     )
 
-    def Snipper(e):
+    def Snipper(e=None):
         pr.value = None
         result.value = "OCR Scanning text..."
         result2.value = "OCR กำลังสแกนข้อความ..."
@@ -52,10 +52,11 @@ def main(page: ft.Page):
         result2.value = "สแกนเสร็จแล้ว กดปุ่มแปลภาษา เพื่อแปลภาษา"
         page.update()
 
+    keyboard.add_hotkey("ctrl+shift+z", Snipper)
+
     snipper_btn = ft.IconButton(
         ft.icons.CROP, on_click=Snipper, tooltip="OCR (Ctrl+Shift+Z)"
     )
-    keyboard.add_hotkey("ctrl+shift+z", Snipper)
 
     def translating(e):
         apikey = ApikeyGPT().get_api_key()
