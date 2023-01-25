@@ -2,13 +2,12 @@
 
 # 🌍 Language Translation App using CHATGPT 🗣️
 
-## Language Translation
-
 <p align="center"><img src="https://media.discordapp.net/attachments/585069498986397707/1064699087431143516/gamedfdsf.gif?width=374&height=671" width=300></p>
+<p align="center">Language Translation</p>
 
-## OCR (Optical Character Recognition)
-
-<p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif?width=374&height=671" width=300></p>
+<p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif?width=374&height=671" width=300>
+<p align="center">OCR (Optical Character Recognition)</p>
+</p>
 
 This app utilizes the power of the CHATGPT language model to provide real-time translation of text input in Thai and English.
 
