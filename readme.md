@@ -49,6 +49,6 @@ The app is built using the OpenAI's CHATGPT model, which is a powerful language 
 
 ## Credis
 
-    Snipper source code from [textshot](https://github.com/ianzhao05/textshot/blob/master/textshot/textshot.py)
+Snipper source code from [textshot](https://github.com/ianzhao05/textshot/blob/master/textshot/textshot.py)
 
 **IMPORTANT**: Remember to enter your API key for the CHATGPT model before running the app in file `apikey.json`
