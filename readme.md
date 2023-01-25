@@ -7,7 +7,9 @@
 
 <p align="center">OCR (Optical Character Recognition)</p>
 <p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif?width=374&height=671" width=300>
+</p>
 
+<p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067843291745370263/gamedfdsf.gif">
 </p>
 
 This app utilizes the power of the CHATGPT language model to provide real-time translation of text input in Thai and English.
