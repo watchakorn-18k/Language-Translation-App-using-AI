@@ -8,7 +8,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('src/icon.ico', 'src'),('src/Snippers.py', 'src'),('src/Apikey.py', 'src')],
+    datas=[('src/icon.ico', 'src')],
     hiddenimports=['src.Apikey','src.Snippers'],
     hookspath=[],
     hooksconfig={},
