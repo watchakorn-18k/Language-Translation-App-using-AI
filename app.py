@@ -4,9 +4,14 @@ from src.Snippers import main_snipper
 from src.Apikey import ApikeyGPT
 import pyperclip
 import keyboard
+from googletrans import Translator, LANGCODES, LANGUAGES
 
 
 def main(page: ft.Page):
+    global translator_google_lang
+    global translator_lang
+    translator_lang = "chatGPT"
+    translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
     page.title = "แอพแปลภาษาด้วย CHATGPT | wk-18k"
     window_width, window_height = (400, 725)
@@ -32,6 +37,7 @@ def main(page: ft.Page):
             ft.dropdown.Option(ch_eng),
             ft.dropdown.Option(th_eng),
         ],
+        width=200,
         value=ch_eng,
         tooltip="เลือกภาษาที่จะ OCR",
     )
@@ -54,13 +60,59 @@ def main(page: ft.Page):
 
     keyboard.add_hotkey("ctrl+shift+z", Snipper)
 
+    def settings_menu(e):
+        def close_dlg(e):
+            dlg_modal.open = False
+            page.update()
+
+        def set_transtalor(e):
+            global translator_lang
+            translator_lang = dropdown_translator.value
+            close_dlg(e)
+
+        translator_list = ["Google Translate", "chatGPT"]
+        dropdown_translator = ft.Dropdown(
+            hint_text=translator_lang,
+            options=[
+                ft.dropdown.Option(translator_list[0]),
+                ft.dropdown.Option(translator_list[1]),
+            ],
+            width=160,
+            value=translator_lang,
+            tooltip="ตัวแปลภาษา",
+        )
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Settings"),
+            content=ft.Row([ft.Text("Translator"), dropdown_translator]),
+            actions=[
+                ft.TextButton("Accept", on_click=set_transtalor),
+                ft.TextButton("Cancel", on_click=close_dlg),
+            ],
+            content_padding=20,
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=lambda e: print("Modal dialog dismissed!"),
+        )
+
+        def open_dlg_modal(e):
+            page.dialog = dlg_modal
+            dlg_modal.open = True
+            page.update()
+
+        open_dlg_modal(e)
+
     snipper_btn = ft.IconButton(
         ft.icons.CROP, on_click=Snipper, tooltip="OCR (Ctrl+Shift+Z)"
+    )
+    settings_btn = ft.IconButton(
+        ft.icons.SETTINGS, on_click=settings_menu, tooltip="OCR (Ctrl+Shift+Z)"
     )
 
     def translating(e):
         apikey = ApikeyGPT().get_api_key()
         data = input_text.value
+        content.visible = True
+        content2.visible = True
         if data != "":
             pr.value = None
             page.update()
@@ -71,33 +123,36 @@ def main(page: ft.Page):
             openai.api_key = apikey
 
             model_engine = "text-davinci-003"
-
-            # สร้างตัวตอบกลับ
-            try:
-                completion = openai.Completion.create(
-                    engine=model_engine,
-                    prompt=f"{data} translate to write in words english",
-                    max_tokens=1024,
-                    n=1,
-                    stop=None,
-                    temperature=0.5,
-                )
-            except:
-                result.value = "Invalid API key"
-                result2.value = "API Key"
-                pr.value = 0
-                page.update()
-
-            response = completion.choices[0].text
-            output = re.sub(r"^\s+|\s+$", "", response)
-            from googletrans import Translator
-
             translator = Translator()
+            if translator_lang == "chatGPT":
+                # สร้างตัวตอบกลับ
+                try:
+                    completion = openai.Completion.create(
+                        engine=model_engine,
+                        prompt=f"{data} translate to write in words english",
+                        max_tokens=1024,
+                        n=1,
+                        stop=None,
+                        temperature=0.5,
+                    )
+                except:
+                    result.value = "Invalid API key"
+                    result2.value = "API Key"
+                    pr.value = 0
+                    page.update()
+
+                response = completion.choices[0].text
+            elif translator_lang == "Google Translate":
+                response = translator.translate(dest="en", text=data).text
+
+            output = re.sub(r"^\s+|\s+$", "", response)
             pr.value = 0
             page.update()
             result.value = output
             page.update()
-            result2.value = translator.translate(src="en", dest="th", text=output).text
+            result2.value = translator.translate(
+                src="en", dest=LANGCODES[translator_google_lang], text=output
+            ).text
             page.update()
         else:
             result.value = (
@@ -133,11 +188,9 @@ def main(page: ft.Page):
         icon=ft.icons.COPY, on_click=copying, tooltip="คลิกเพื่อคัดลอก"
     )
     content = ft.Row(
-        [
-            result,
-            copy_btn,
-        ],
+        [result, copy_btn, ft.IconButton(ft.icons.CLOSE, opacity=0)],
         alignment=ft.MainAxisAlignment.END,
+        visible=False,
     )
 
     def copying2(e):
@@ -148,6 +201,47 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
+    def change_lang(e):
+        def close_dlg(e):
+            dlg_modal.open = False
+            page.update()
+
+        def set_transtalor(e):
+            global translator_google_lang
+            translator_google_lang = dropdown_translator.value
+            close_dlg(e)
+
+        dropdown_translator = ft.Dropdown(
+            hint_text=translator_google_lang,
+            width=160,
+            value=translator_google_lang,
+            tooltip="เปลี่ยนภาษา",
+        )
+        if dropdown_translator.options == []:
+            for i in LANGUAGES.values():
+                dropdown_translator.options.append(ft.dropdown.Option(i))
+
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Change Language"),
+            content=ft.Row([ft.Text("Language"), dropdown_translator]),
+            actions=[
+                ft.TextButton("Accept", on_click=set_transtalor),
+                ft.TextButton("Cancel", on_click=close_dlg),
+            ],
+            content_padding=20,
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=lambda e: print("Modal dialog dismissed!"),
+        )
+
+        def open_dlg_modal(e):
+            page.dialog = dlg_modal
+            dlg_modal.open = True
+            page.update()
+
+        open_dlg_modal(e)
+        # print(LANGCODES)
+
     copy_btn2 = ft.IconButton(
         icon=ft.icons.COPY, on_click=copying2, tooltip="คลิกเพื่อคัดลอก"
     )
@@ -155,7 +249,9 @@ def main(page: ft.Page):
         [
             result2,
             copy_btn2,
+            ft.IconButton(ft.icons.EDIT, on_click=change_lang, tooltip="เปลี่ยนภาษา"),
         ],
+        visible=False,
         alignment=ft.MainAxisAlignment.END,
     )
 
@@ -178,7 +274,14 @@ def main(page: ft.Page):
                         ],
                         alignment=ft.MainAxisAlignment.CENTER,
                     ),
-                    ft.Row([snipper_btn, dropdown]),
+                    ft.Row(
+                        [
+                            snipper_btn,
+                            dropdown,
+                            settings_btn,
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_AROUND,
+                    ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
