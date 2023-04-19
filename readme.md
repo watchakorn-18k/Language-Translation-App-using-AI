@@ -36,6 +36,13 @@ can be used to extract text from images or scanned documents, including text on 
 
 **NOTE**: You can press the keyboard shortcut `Ctrl + Shift + Z` to perform OCR.
 
+## Settings Menu
+
+<p align="center">
+<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098350494969253928/image.png" height="400">
+<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098350257651335299/image.png" height="400">
+</p>
+
 ## Installation
 
 1. Make sure you have Python 3 installed on your system

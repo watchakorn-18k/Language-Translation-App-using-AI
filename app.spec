@@ -28,7 +28,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Language-Translation-GPT-Appv.2.0',
+    name='Language-Translation-GPT-App-v.3.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
