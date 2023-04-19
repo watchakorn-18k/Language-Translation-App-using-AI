@@ -43,6 +43,16 @@ can be used to extract text from images or scanned documents, including text on 
 <img src="https://cdn.discordapp.com/attachments/581018943041306641/1098350257651335299/image.png" height="400">
 </p>
 
+## How to use Bing Chat
+
+- Install the cookie editor extension for [Chrome](https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) or [Firefox](https://addons.mozilla.org/en-US/firefox/addon/cookie-editor/)
+- Go to `bing.com`
+- Open the extension
+- Click "Export" on the bottom right, then "Export as JSON" (This saves your cookies to clipboard)
+- Paste your cookies into a file `cookies.json`
+
+follow [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/README.md#getting-authentication-required)
+
 ## Installation
 
 1. Make sure you have Python 3 installed on your system
@@ -64,7 +74,7 @@ pyinstaller app.spec
 
 The app is built using the OpenAI's CHATGPT model, which is a powerful language generation model. It uses the Hugging Face's transformers library to fine-tune the model and make it work for our specific use case.
 
-## Credis
+## Credit
 
 Snipper source code from [textshot](https://github.com/ianzhao05/textshot/blob/master/textshot/textshot.py)
 
