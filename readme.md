@@ -56,7 +56,11 @@ can be used to extract text from images or scanned documents, including text on 
 
 You can see more [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/README.md#getting-authentication-required).
 
-<p align="center"><img src="https://cdn.discordapp.com/attachments/581018943041306641/1098685947480113336/image.png" height="400"></p>
+<p align="center">
+<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098685947480113336/image.png" height="400">
+<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098694722752614420/image.png" height="400">
+
+</p>
 
 ## How to use Bard
 
@@ -70,7 +74,7 @@ You can see more [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/RE
 
 1. Make sure you have Python 3 installed on your system
 2. Install package `pip install fenv`
-3. Clone the repository and create virtualenv with `fenv clone https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT
+3. Clone the repository and create virtualenv with `fenv clone https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT`
 4. Run the app with the command `python app.py` of `flet app.py`
 
 ## Development
