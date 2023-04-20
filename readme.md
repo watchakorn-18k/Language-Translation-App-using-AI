@@ -1,15 +1,15 @@
 <p align="center"><img src="src\icon.ico" width=50></p>
 
-# 🌍 Language Translation App using CHATGPT 🗣️
+# 🌍 Language Translation App using CHATGPT and BING CHAT 🗣️
 
-<p align="center">Language Translation</p>
-<p align="center"><img src="https://media.discordapp.net/attachments/585069498986397707/1064699087431143516/gamedfdsf.gif?width=374&height=671" width=300></p>
+<h2 align="center">Language Translation</h2>
+<p align="center"><img src="https://media.discordapp.net/attachments/581018943041306641/1098504841875161208/gamedfdsf.gif?width=356&height=638" width=300></p>
 
-<p align="center">OCR (Optical Character Recognition)</p>
+<h2 align="center">OCR (Optical Character Recognition)</h2>
 <p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif?width=374&height=671" width=300>
 </p>
 
-<p align="center">Example</p>
+<h2 align="center">Example</h2>
 <p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067843291745370263/gamedfdsf.gif">
 </p>
 

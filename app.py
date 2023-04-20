@@ -7,6 +7,7 @@ import keyboard
 from googletrans import Translator, LANGCODES, LANGUAGES
 import asyncio
 from src.Bingchat import BingChat
+import datetime
 
 
 def main(page: ft.Page):
@@ -15,7 +16,7 @@ def main(page: ft.Page):
     translator_lang = "ChatGPT"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
-    page.title = "แอพแปลภาษาด้วย CHATGPT | wk-18k"
+    page.title = "แอพแปลภาษาด้วย AI | wk-18k"
     window_width, window_height = (400, 725)
     page.window_width = window_width
     page.window_height = window_height
@@ -28,7 +29,11 @@ def main(page: ft.Page):
     pr.value = 0
     page.appbar = ft.AppBar(
         leading_width=40,
-        title=ft.Text("แอพแปลภาษาด้วย CHATGPT dev wk-18k", size=15),
+        title=ft.Column(
+            [
+                ft.Text("แอพแปลภาษาด้วย AI", size=20),
+            ]
+        ),
         center_title=True,
     )
     ch_eng = "Chinese and English"
@@ -87,7 +92,16 @@ def main(page: ft.Page):
         dlg_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text("Settings"),
-            content=ft.Row([ft.Text("Translator"), dropdown_translator]),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [ft.Text("Translator"), dropdown_translator],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    )
+                ],
+                height=150,
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
             actions=[
                 ft.TextButton("Accept", on_click=set_transtalor),
                 ft.TextButton("Cancel", on_click=close_dlg),
@@ -108,15 +122,16 @@ def main(page: ft.Page):
         ft.icons.CROP, on_click=Snipper, tooltip="OCR (Ctrl+Shift+Z)"
     )
     settings_btn = ft.IconButton(
-        ft.icons.SETTINGS, on_click=settings_menu, tooltip="OCR (Ctrl+Shift+Z)"
+        ft.icons.SETTINGS, on_click=settings_menu, tooltip="Settings"
     )
 
     def translating(e):
         apikey = ApikeyGPT().get_api_key()
         data = input_text.value
-        content.visible = True
-        content2.visible = True
         translator = Translator()
+        content.visible = False
+        content2.visible = False
+        page.update()
         if data != "":
             pr.value = None
             page.update()
@@ -141,8 +156,10 @@ def main(page: ft.Page):
                     )
                     response = completion.choices[0].text
                 except:
+                    content.visible = True
+                    content2.visible = True
                     result.value = "Invalid API key ChatGPT"
-                    result2.value = "API Key ChatGPT in apikey.json"
+                    result2.value = "API Key ChatGPT in `apikey.json`"
                     pr.value = 0
                     page.update()
 
@@ -150,18 +167,24 @@ def main(page: ft.Page):
                 response = translator.translate(dest="en", text=data).text
 
             elif translator_lang == "Bing Chat":
-                bingchat = BingChat()
-                asyncio.run(bingchat.main())
-                response = bingchat.get_data()
+                try:
+                    bingchat = BingChat(data)
+                    asyncio.run(bingchat.main())
+                    response = bingchat.get_data()
+                except KeyError:
+                    response = "can't translate"
 
             output = re.sub(r"^\s+|\s+$", "", response)
             pr.value = 0
+
             page.update()
             result.value = output
             page.update()
             result2.value = translator.translate(
                 src="en", dest=LANGCODES[translator_google_lang], text=output
             ).text
+            content.visible = True
+            content2.visible = True
             page.update()
 
         else:
@@ -169,6 +192,8 @@ def main(page: ft.Page):
             result2.value = translator.translate(
                 src="en", dest=LANGCODES[translator_google_lang], text=result.value
             ).text
+            content.visible = True
+            content2.visible = True
             page.update()
 
     cal_btn = ft.ElevatedButton(
@@ -264,6 +289,8 @@ def main(page: ft.Page):
         alignment=ft.MainAxisAlignment.END,
     )
 
+    current_year = datetime.date.today().year
+    last_year = current_year
     page.add(
         ft.Container(
             ft.Column(
@@ -283,13 +310,27 @@ def main(page: ft.Page):
                         ],
                         alignment=ft.MainAxisAlignment.CENTER,
                     ),
-                    ft.Row(
+                    ft.Column(
                         [
-                            snipper_btn,
-                            dropdown,
-                            settings_btn,
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_AROUND,
+                            ft.Row(
+                                [
+                                    snipper_btn,
+                                    dropdown,
+                                    settings_btn,
+                                ],
+                                alignment=ft.MainAxisAlignment.SPACE_AROUND,
+                            ),
+                            ft.Row(
+                                [
+                                    ft.Markdown(
+                                        f"""
+พัฒนาโดย [wk18k © {last_year}](https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT)\n
+                        """
+                                    ),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                            ),
+                        ]
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

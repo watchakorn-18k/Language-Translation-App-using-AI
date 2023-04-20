@@ -6,8 +6,8 @@ import os
 
 
 class BingChat:
-    def __init__(self) -> None:
-        self.text_original = "或许 时空法术"
+    def __init__(self, data) -> None:
+        self.text_original = data
         self.result_str = ""
 
     def create_file_json(self):
@@ -29,18 +29,21 @@ class BingChat:
                 with open("./cookies.json", "r") as f:
                     cookies = json.load(f)
                 bot = Chatbot(cookies=cookies)
-                data = await bot.ask(
-                    prompt=f"'{self.text_original}' translate to english only answer in json format is "
-                    + "{'translation_result': '<result>'}",
-                    conversation_style=ConversationStyle.creative,
-                    wss_link="wss://sydney.bing.com/sydney/ChatHub",
-                )
+                try:
+                    data = await bot.ask(
+                        prompt=f"'{self.text_original}' translate to english only answer in json format is "
+                        + '{"translation_result": "<result>"}',
+                        conversation_style=ConversationStyle.creative,
+                        wss_link="wss://sydney.bing.com/sydney/ChatHub",
+                    )
+                except:
+                    self.result_str = "`cookies.json` has expired or the data is invalid, please update it."
+                await bot.close()
                 json_str = re.search(
                     r"\{.*\}", data["item"]["messages"][1]["text"]
                 ).group()
                 json_dict = json.loads(json_str)
                 self.result_str = json_dict["translation_result"]
-                await bot.close()
             else:
                 self.result_str = "You need to add information to `cookies.json`"
 
