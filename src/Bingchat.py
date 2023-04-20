@@ -11,22 +11,22 @@ class BingChat:
         self.result_str = ""
 
     def create_file_json(self):
-        with open("cookies.json", "w") as outfile:
+        with open("cookies_bing_chat.json", "w") as outfile:
             outfile.write(
                 "You can see more https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT#how-to-use-bing-chat"
             )
 
     async def main(self):
-        if not os.path.exists("cookies.json"):
+        if not os.path.exists("cookies_bing_chat.json"):
             return self.create_file_json()
         else:
-            with open("./cookies.json", "r") as f:
+            with open("./cookies_bing_chat.json", "r") as f:
                 data_cookies = f.readline()
             if (
                 data_cookies
                 != "You can see more https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT#how-to-use-bing-chat"
             ):
-                with open("./cookies.json", "r") as f:
+                with open("./cookies_bing_chat.json", "r") as f:
                     cookies = json.load(f)
                 bot = Chatbot(cookies=cookies)
                 try:
@@ -37,15 +37,20 @@ class BingChat:
                         wss_link="wss://sydney.bing.com/sydney/ChatHub",
                     )
                 except:
-                    self.result_str = "`cookies.json` has expired or the data is invalid, please update it."
+                    self.result_str = "`cookies_bing_chat.json` has expired or the data is invalid, please update it."
                 await bot.close()
-                json_str = re.search(
-                    r"\{.*\}", data["item"]["messages"][1]["text"]
-                ).group()
-                json_dict = json.loads(json_str)
-                self.result_str = json_dict["translation_result"]
+                result = str(data["item"]["messages"][1]["text"].encode("utf-8"))
+                start_index = result.find("{")
+                end_index = result.find("}") + 1
+                self.result_str = json.loads(result[start_index:end_index])[
+                    "translation_result"
+                    if result[start_index:end_index] != ""
+                    else "Can't translate"
+                ]
             else:
-                self.result_str = "You need to add information to `cookies.json`"
+                self.result_str = (
+                    "You need to add information to `cookies_bing_chat.json`"
+                )
 
     def get_data(self):
         return self.result_str

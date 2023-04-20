@@ -7,13 +7,14 @@ import keyboard
 from googletrans import Translator, LANGCODES, LANGUAGES
 import asyncio
 from src.Bingchat import BingChat
+from src.Bard import Bard
 import datetime
 
 
 def main(page: ft.Page):
     global translator_google_lang
     global translator_lang
-    translator_lang = "ChatGPT"
+    translator_lang = "Bing Chat"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
     page.title = "แอพแปลภาษาด้วย AI | wk-18k"
@@ -77,18 +78,15 @@ def main(page: ft.Page):
             translator_lang = dropdown_translator.value
             close_dlg(e)
 
-        translator_list = ["Google Translate", "ChatGPT", "Bing Chat"]
+        translator_list = ["Google Translate", "ChatGPT", "Bing Chat", "Bard"]
         dropdown_translator = ft.Dropdown(
             hint_text=translator_lang,
-            options=[
-                ft.dropdown.Option(translator_list[0]),
-                ft.dropdown.Option(translator_list[1]),
-                ft.dropdown.Option(translator_list[2]),
-            ],
             width=160,
             value=translator_lang,
             tooltip="ตัวแปลภาษา",
         )
+        for i in translator_list:
+            dropdown_translator.options.append(ft.dropdown.Option(i))
         dlg_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text("Settings"),
@@ -131,6 +129,7 @@ def main(page: ft.Page):
         translator = Translator()
         content.visible = False
         content2.visible = False
+        change_langauge_btn.visible = False
         page.update()
         if data != "":
             pr.value = None
@@ -158,8 +157,9 @@ def main(page: ft.Page):
                 except:
                     content.visible = True
                     content2.visible = True
+                    change_langauge_btn.visible = True
                     result.value = "Invalid API key ChatGPT"
-                    result2.value = "API Key ChatGPT in `apikey.json`"
+                    result2.value = "API Key ChatGPT in `api_key_chatgpt.json`"
                     pr.value = 0
                     page.update()
 
@@ -174,6 +174,15 @@ def main(page: ft.Page):
                 except KeyError:
                     response = "can't translate"
 
+            elif translator_lang == "Bard":
+                try:
+                    bard = Bard()
+                    bard.text_input = data
+                    bard.main()
+                    response = bard.get_result()
+                except KeyError:
+                    response = "can't translate"
+
             output = re.sub(r"^\s+|\s+$", "", response)
             pr.value = 0
 
@@ -185,6 +194,7 @@ def main(page: ft.Page):
             ).text
             content.visible = True
             content2.visible = True
+            change_langauge_btn.visible = True
             page.update()
 
         else:
@@ -194,6 +204,7 @@ def main(page: ft.Page):
             ).text
             content.visible = True
             content2.visible = True
+            change_langauge_btn.visible = True
             page.update()
 
     cal_btn = ft.ElevatedButton(
@@ -217,7 +228,7 @@ def main(page: ft.Page):
         icon=ft.icons.COPY, on_click=copying, tooltip="คลิกเพื่อคัดลอก"
     )
     content = ft.Row(
-        [result, copy_btn, ft.IconButton(ft.icons.CLOSE, opacity=0)],
+        [result, copy_btn],
         alignment=ft.MainAxisAlignment.END,
         visible=False,
     )
@@ -289,10 +300,16 @@ def main(page: ft.Page):
         [
             result2,
             copy_btn2,
-            ft.IconButton(ft.icons.EDIT, on_click=change_lang, tooltip="เปลี่ยนภาษา"),
         ],
         visible=False,
         alignment=ft.MainAxisAlignment.END,
+    )
+
+    change_langauge_btn = ft.IconButton(
+        ft.icons.EDIT,
+        on_click=change_lang,
+        tooltip="เปลี่ยนภาษา",
+        visible=False,
     )
 
     current_year = datetime.date.today().year
@@ -310,6 +327,7 @@ def main(page: ft.Page):
                                     pr,
                                     content,
                                     content2,
+                                    change_langauge_btn,
                                 ],
                                 horizontal_alignment="center",
                             )
