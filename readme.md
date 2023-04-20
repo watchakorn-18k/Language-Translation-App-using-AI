@@ -3,7 +3,7 @@
 # 🌍 Language Translation App using CHATGPT and BING CHAT 🗣️
 
 <h2 align="center">Language Translation</h2>
-<p align="center"><img src="https://media.discordapp.net/attachments/581018943041306641/1098504841875161208/gamedfdsf.gif?width=356&height=638" width=300></p>
+<p align="center"><img src="https://cdn.discordapp.com/attachments/581018943041306641/1098513058206326815/gamedfdsf.gif" width=300></p>
 
 <h2 align="center">OCR (Optical Character Recognition)</h2>
 <p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif?width=374&height=671" width=300>
