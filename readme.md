@@ -45,20 +45,21 @@ can be used to extract text from images or scanned documents, including text on 
 
 ## How to use Bing Chat
 
+- Checking access (Required) [here](https://github.com/acheong08/EdgeGPT#checking-access-required)
 - Install the cookie editor extension for [Chrome](https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) or [Firefox](https://addons.mozilla.org/en-US/firefox/addon/cookie-editor/)
 - Go to `bing.com`
 - Open the extension
 - Click "Export" on the bottom right, then "Export as JSON" (This saves your cookies to clipboard)
 - Paste your cookies into a file `cookies.json`
 
-follow [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/README.md#getting-authentication-required)
+You can see more [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/README.md#getting-authentication-required).
 
 ## Installation
 
 1. Make sure you have Python 3 installed on your system
-2. Clone the repository or download the zip file
-3. Run the command `pip install -r requirements.txt` to install the necessary dependencies
-4. Run the app with the command `python app.py`
+2. Install package `pip install fenv`
+3. Clone the repository and create virtualenv with `fenv clone https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT
+4. Run the app with the command `python app.py` of `flet app.py`
 
 ## Development
 

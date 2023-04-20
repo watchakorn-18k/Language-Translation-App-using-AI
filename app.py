@@ -5,12 +5,14 @@ from src.Apikey import ApikeyGPT
 import pyperclip
 import keyboard
 from googletrans import Translator, LANGCODES, LANGUAGES
+import asyncio
+from src.Bingchat import BingChat
 
 
 def main(page: ft.Page):
     global translator_google_lang
     global translator_lang
-    translator_lang = "chatGPT"
+    translator_lang = "ChatGPT"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
     page.title = "แอพแปลภาษาด้วย CHATGPT | wk-18k"
@@ -70,12 +72,13 @@ def main(page: ft.Page):
             translator_lang = dropdown_translator.value
             close_dlg(e)
 
-        translator_list = ["Google Translate", "chatGPT"]
+        translator_list = ["Google Translate", "ChatGPT", "Bing Chat"]
         dropdown_translator = ft.Dropdown(
             hint_text=translator_lang,
             options=[
                 ft.dropdown.Option(translator_list[0]),
                 ft.dropdown.Option(translator_list[1]),
+                ft.dropdown.Option(translator_list[2]),
             ],
             width=160,
             value=translator_lang,
@@ -113,6 +116,7 @@ def main(page: ft.Page):
         data = input_text.value
         content.visible = True
         content2.visible = True
+        translator = Translator()
         if data != "":
             pr.value = None
             page.update()
@@ -123,8 +127,8 @@ def main(page: ft.Page):
             openai.api_key = apikey
 
             model_engine = "text-davinci-003"
-            translator = Translator()
-            if translator_lang == "chatGPT":
+
+            if translator_lang == "ChatGPT":
                 # สร้างตัวตอบกลับ
                 try:
                     completion = openai.Completion.create(
@@ -135,15 +139,20 @@ def main(page: ft.Page):
                         stop=None,
                         temperature=0.5,
                     )
+                    response = completion.choices[0].text
                 except:
-                    result.value = "Invalid API key"
-                    result2.value = "API Key"
+                    result.value = "Invalid API key ChatGPT"
+                    result2.value = "API Key ChatGPT in apikey.json"
                     pr.value = 0
                     page.update()
 
-                response = completion.choices[0].text
             elif translator_lang == "Google Translate":
                 response = translator.translate(dest="en", text=data).text
+
+            elif translator_lang == "Bing Chat":
+                bingchat = BingChat()
+                asyncio.run(bingchat.main())
+                response = bingchat.get_data()
 
             output = re.sub(r"^\s+|\s+$", "", response)
             pr.value = 0
@@ -154,17 +163,12 @@ def main(page: ft.Page):
                 src="en", dest=LANGCODES[translator_google_lang], text=output
             ).text
             page.update()
+
         else:
-            result.value = (
-                "Invalid API Key"
-                if apikey == "API key for the CHATGPT"
-                else "Fill in the text box"
-            )
-            result2.value = (
-                "API Key ไม่ถูกต้อง"
-                if apikey == "API key for the CHATGPT"
-                else "กรอกข้อความลงในช่องป้อนข้อมูล"
-            )
+            result.value = "Fill in the text box"
+            result2.value = translator.translate(
+                src="en", dest=LANGCODES[translator_google_lang], text=result.value
+            ).text
             page.update()
 
     cal_btn = ft.ElevatedButton(
@@ -202,6 +206,8 @@ def main(page: ft.Page):
         page.update()
 
     def change_lang(e):
+        translator = Translator()
+
         def close_dlg(e):
             dlg_modal.open = False
             page.update()
@@ -209,6 +215,9 @@ def main(page: ft.Page):
         def set_transtalor(e):
             global translator_google_lang
             translator_google_lang = dropdown_translator.value
+            result2.value = translator.translate(
+                src="en", dest=LANGCODES[translator_google_lang], text=result.value
+            ).text
             close_dlg(e)
 
         dropdown_translator = ft.Dropdown(
