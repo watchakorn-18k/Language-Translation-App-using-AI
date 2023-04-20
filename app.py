@@ -80,7 +80,13 @@ def main(page: ft.Page):
             translator_lang = dropdown_translator.value
             close_dlg(e)
 
-        translator_list = ["Google Translate", "ChatGPT", "Bing Chat", "Bard"]
+        translator_list = [
+            "Google Translate",
+            "ChatGPT",
+            "Bing Chat",
+            "Bard",
+            "ChatGPT(FREE)",
+        ]
         dropdown_translator = ft.Dropdown(
             hint_text=translator_lang,
             width=160,
@@ -144,47 +150,50 @@ def main(page: ft.Page):
 
             model_engine = "text-davinci-003"
 
-            if translator_lang == "ChatGPT":
-                # สร้างตัวตอบกลับ
-                try:
-                    completion = openai.Completion.create(
-                        engine=model_engine,
-                        prompt=f"{data} translate to write in words english",
-                        max_tokens=1024,
-                        n=1,
-                        stop=None,
-                        temperature=0.5,
-                    )
-                    response = completion.choices[0].text
-                except:
-                    content.visible = True
-                    content2.visible = True
-                    change_langauge_btn.visible = True
-                    result.value = "Invalid API key ChatGPT"
-                    result2.value = "API Key ChatGPT in `api_key_chatgpt.json`"
-                    pr.value = 0
-                    page.update()
+            match translator_lang:
+                case "ChatGPT":
+                    # สร้างตัวตอบกลับ
+                    try:
+                        completion = openai.Completion.create(
+                            engine=model_engine,
+                            prompt=f"{data} translate to write in words english",
+                            max_tokens=1024,
+                            n=1,
+                            stop=None,
+                            temperature=0.5,
+                        )
+                        response = completion.choices[0].text
+                    except:
+                        content.visible = True
+                        content2.visible = True
+                        change_langauge_btn.visible = True
+                        result.value = "Invalid API key ChatGPT"
+                        result2.value = "API Key ChatGPT in `api_key_chatgpt.json`"
+                        pr.value = 0
+                        page.update()
 
-            elif translator_lang == "Google Translate":
-                response = translator.translate(dest="en", text=data).text
+                case "Google Translate":
+                    response = translator.translate(dest="en", text=data).text
 
-            elif translator_lang == "Bing Chat":
-                try:
-                    bingchat = BingChat()
-                    bingchat.text_original = data
-                    asyncio.run(bingchat.main())
-                    response = bingchat.get_data()
-                except KeyError:
-                    response = "can't translate"
+                case "Bing Chat":
+                    try:
+                        bingchat = BingChat()
+                        bingchat.text_original = data
+                        asyncio.run(bingchat.main())
+                        response = bingchat.get_data()
+                    except KeyError:
+                        response = "can't translate"
 
-            elif translator_lang == "Bard":
-                try:
-                    bard = Bard()
-                    bard.text_input = data
-                    bard.main()
-                    response = bard.get_result()
-                except KeyError:
-                    response = "can't translate"
+                case "Bard":
+                    try:
+                        bard = Bard()
+                        bard.text_input = data
+                        bard.main()
+                        response = bard.get_result()
+                    except KeyError:
+                        response = "can't translate"
+                case "ChatGPT(FREE)":
+                    pass
 
             output = re.sub(r"^\s+|\s+$", "", response)
             pr.value = 0
