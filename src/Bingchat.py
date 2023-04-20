@@ -6,8 +6,8 @@ import os
 
 
 class BingChat:
-    def __init__(self, data) -> None:
-        self.text_original = data
+    def __init__(self) -> None:
+        self.text_original = ""
         self.result_str = ""
 
     def create_file_json(self):
@@ -15,6 +15,10 @@ class BingChat:
             outfile.write(
                 "You can see more https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT#how-to-use-bing-chat"
             )
+
+    def check_has_json(self):
+        if not os.path.exists("cookies_bing_chat.json"):
+            return self.create_file_json()
 
     async def main(self):
         if not os.path.exists("cookies_bing_chat.json"):

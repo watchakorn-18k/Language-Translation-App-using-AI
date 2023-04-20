@@ -14,9 +14,11 @@ import datetime
 def main(page: ft.Page):
     global translator_google_lang
     global translator_lang
-    translator_lang = "Bing Chat"
+    translator_lang = "Bard"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
+    Bard().check_has_json()
+    BingChat().check_has_json()
     page.title = "แอพแปลภาษาด้วย AI | wk-18k"
     window_width, window_height = (400, 725)
     page.window_width = window_width
@@ -97,7 +99,7 @@ def main(page: ft.Page):
                         alignment=ft.MainAxisAlignment.CENTER,
                     )
                 ],
-                height=150,
+                height=100,
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
             actions=[
@@ -168,7 +170,8 @@ def main(page: ft.Page):
 
             elif translator_lang == "Bing Chat":
                 try:
-                    bingchat = BingChat(data)
+                    bingchat = BingChat()
+                    bingchat.text_original = data
                     asyncio.run(bingchat.main())
                     response = bingchat.get_data()
                 except KeyError:

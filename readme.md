@@ -1,6 +1,6 @@
 <p align="center"><img src="src\icon.ico" width=50></p>
 
-# 🌍 Language Translation App using CHATGPT and BING CHAT 🗣️
+# 🌍 Language Translation App using CHATGPT , BING CHAT and BARD 🗣️
 
 <h2 align="center">Language Translation</h2>
 <p align="center"><img src="https://cdn.discordapp.com/attachments/581018943041306641/1098513058206326815/gamedfdsf.gif" width=300></p>
