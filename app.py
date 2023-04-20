@@ -247,7 +247,7 @@ def main(page: ft.Page):
 
         dropdown_translator = ft.Dropdown(
             hint_text=translator_google_lang,
-            width=160,
+            width=190,
             value=translator_google_lang,
             tooltip="เปลี่ยนภาษา",
         )
@@ -258,12 +258,18 @@ def main(page: ft.Page):
         dlg_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text("Change Language"),
-            content=ft.Row([ft.Text("Language"), dropdown_translator]),
+            content=ft.Container(
+                content=ft.Row(
+                    [ft.Text("Language"), dropdown_translator],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                ),
+                padding=ft.padding.only(top=50, bottom=50),
+            ),
             actions=[
                 ft.TextButton("Accept", on_click=set_transtalor),
                 ft.TextButton("Cancel", on_click=close_dlg),
             ],
-            content_padding=20,
+            content_padding=5,
             actions_alignment=ft.MainAxisAlignment.END,
             on_dismiss=lambda e: print("Modal dialog dismissed!"),
         )
