@@ -2,14 +2,6 @@
 
 # 🌍 Language Translation App using CHATGPT , BING CHAT and BARD 🗣️
 
-<h2 align="center">Language Translation</h2>
-<p align="center"><img src="https://cdn.discordapp.com/attachments/581018943041306641/1098513058206326815/gamedfdsf.gif" width=300></p>
-
-<h2 align="center">OCR (Optical Character Recognition)</h2>
-<p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif?width=374&height=671" width=300>
-</p>
-
-<h2 align="center">Example</h2>
 <p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067843291745370263/gamedfdsf.gif">
 </p>
 
@@ -17,6 +9,8 @@ This app utilizes the power of the CHATGPT language model to provide real-time t
 
 - Support for Thai and English languages
 - Easy-to-use interface
+
+<p align="center"><img src="https://cdn.discordapp.com/attachments/581018943041306641/1098513058206326815/gamedfdsf.gif" width=300></p>
 
 ## How to use
 
@@ -54,6 +48,16 @@ can be used to extract text from images or scanned documents, including text on 
 - Click "Export" on the bottom right, then "Export as JSON" (This saves your cookies to clipboard)
 - Paste your cookies into a file `cookies_bing_chat.json`
 
+Example `cookies_bing_chat.json`
+```diff
+- You can see more https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT#how-to-use-bing-chat
+
++ [
++    {
++        "domain": ".bing.com",
++        "expirationDate": ..............
+```
+
 You can see more [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/README.md#getting-authentication-required).
 
 <p align="center">
@@ -69,6 +73,13 @@ You can see more [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/RE
 - Copy the values
   - Session: Go to Application → Cookies → \_\_Secure-1PSID. Copy the value of that cookie.
   - Paste it into a file `cookies_bard.json`
+  
+Example `cookies_bard.json`
+```diff
+- {"cookie_bard": "Session: Go to Application > Cookies > __Secure-1PSID. Copy the value of that cookie."}
+
++ {"cookie_bard": "VA............................................"}
+```
 
 ## Installation
 
