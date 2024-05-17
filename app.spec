@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+from PyInstaller.utils.hooks import copy_metadata
+datas = copy_metadata('pydantic')
 
 block_cipher = None
 
@@ -9,7 +10,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('src/icon.ico', 'src')],
-    hiddenimports=['src.Apikey','src.Snippers','easyocr'],
+    hiddenimports=['src.Apikey','src.Snippers','easyocr','pydantic'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -28,7 +29,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Language-Translation-GPT-App-v.5.0',
+    name='Language-Translation-GPT-App-v.5.1',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
