@@ -7,19 +7,19 @@ import keyboard
 from googletrans import Translator, LANGCODES, LANGUAGES
 import asyncio
 from src.Bingchat import BingChat
-from src.Bard import Bard
+from src.Gemini import GeminiAPI
 import datetime
 
 
 def main(page: ft.Page):
     global translator_google_lang
     global translator_lang
-    translator_lang = "Bard"
+    translator_lang = "Google Translate"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
-    Bard().check_has_json()
+    GeminiAPI().check_has_json()
     BingChat().check_has_json()
-    page.title = "แอพแปลภาษาด้วย AI | wk-18k"
+    page.title = "Translate App with AI | wk-18k"
     window_width, window_height = (400, 725)
     page.window_width = window_width
     page.window_height = window_height
@@ -34,22 +34,24 @@ def main(page: ft.Page):
         leading_width=40,
         title=ft.Column(
             [
-                ft.Text("แอพแปลภาษาด้วย AI", size=20),
+                ft.Text("Translate App with AI", size=20),
             ]
         ),
         center_title=True,
     )
     ch_eng = "Chinese and English"
     th_eng = "Thai and English"
+    tr_eng = "Turkish and English"
     dropdown = ft.Dropdown(
         hint_text=ch_eng,
         options=[
             ft.dropdown.Option(ch_eng),
             ft.dropdown.Option(th_eng),
+            ft.dropdown.Option(tr_eng),
         ],
         width=200,
         value=ch_eng,
-        tooltip="เลือกภาษาที่จะ OCR",
+        tooltip="Select Language for OCR",
     )
 
     def Snipper(e=None):
@@ -61,6 +63,8 @@ def main(page: ft.Page):
             main_snipper(["ch_sim", "en"])
         elif dropdown.value == "Thai and English":
             main_snipper(["th", "en"])
+        elif dropdown.value == "Turkish and English":
+            main_snipper(["tr", "en"])
 
         input_text.value = pyperclip.paste()
         pr.value = 0
@@ -84,7 +88,7 @@ def main(page: ft.Page):
             "Google Translate",
             "ChatGPT",
             "Bing Chat",
-            "Bard",
+            "Gemini",
             "ChatGPT(FREE)",
         ]
         dropdown_translator = ft.Dropdown(
@@ -184,12 +188,10 @@ def main(page: ft.Page):
                     except KeyError:
                         response = "can't translate"
 
-                case "Bard":
+                case "Gemini":
                     try:
-                        bard = Bard()
-                        bard.text_input = data
-                        bard.main()
-                        response = bard.get_result()
+                        gemini = GeminiAPI()
+                        response = gemini.prompt_gemini_run(data)
                     except KeyError:
                         response = "can't translate"
                 case "ChatGPT(FREE)":
@@ -223,7 +225,7 @@ def main(page: ft.Page):
         content=ft.Icon(ft.icons.TRANSLATE),
         width=300,
         on_click=translating,
-        tooltip="คลิกเพื่อแปลภาษา",
+        tooltip="Click to translate",
     )
     result = ft.Text("", width=250)
     result2 = ft.Text("", width=250)
@@ -231,13 +233,13 @@ def main(page: ft.Page):
     def copying(e):
         page.set_clipboard(result.value)
         page.snack_bar = ft.SnackBar(
-            content=ft.Text("คัดลอกแล้ว"),
+            content=ft.Text("Copied"),
         )
         page.snack_bar.open = True
         page.update()
 
     copy_btn = ft.IconButton(
-        icon=ft.icons.COPY, on_click=copying, tooltip="คลิกเพื่อคัดลอก"
+        icon=ft.icons.COPY, on_click=copying, tooltip="Click to copy"
     )
     content = ft.Row(
         [result, copy_btn],
@@ -248,7 +250,7 @@ def main(page: ft.Page):
     def copying2(e):
         page.set_clipboard(result2.value)
         page.snack_bar = ft.SnackBar(
-            content=ft.Text("คัดลอกแล้ว"),
+            content=ft.Text("Copied"),
         )
         page.snack_bar.open = True
         page.update()
@@ -272,7 +274,7 @@ def main(page: ft.Page):
             hint_text=translator_google_lang,
             width=190,
             value=translator_google_lang,
-            tooltip="เปลี่ยนภาษา",
+            tooltip="Change Language",
         )
         if dropdown_translator.options == []:
             for i in LANGUAGES.values():
@@ -306,7 +308,7 @@ def main(page: ft.Page):
         # print(LANGCODES)
 
     copy_btn2 = ft.IconButton(
-        icon=ft.icons.COPY, on_click=copying2, tooltip="คลิกเพื่อคัดลอก"
+        icon=ft.icons.COPY, on_click=copying2, tooltip="Click to copy"
     )
     content2 = ft.Row(
         [
@@ -320,7 +322,7 @@ def main(page: ft.Page):
     change_langauge_btn = ft.IconButton(
         ft.icons.EDIT,
         on_click=change_lang,
-        tooltip="เปลี่ยนภาษา",
+        tooltip="Change language",
         visible=False,
     )
 

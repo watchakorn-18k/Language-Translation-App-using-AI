@@ -1,6 +1,6 @@
 <p align="center"><img src="src\icon.ico" width=50></p>
 
-# 🌍 Language Translation App using CHATGPT , BING CHAT and BARD 🗣️
+# 🌍 Language Translation App using CHATGPT , BING CHAT and Gemini 🗣️
 
 <p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067843291745370263/gamedfdsf.gif">
 </p>
@@ -27,16 +27,14 @@ This app utilizes the power of the CHATGPT language model to provide real-time t
 
 can be used to extract text from images or scanned documents, including text on the screen. Currently, our OCR system supports two languages: Chinese and English.
 
-<p align="center"><img src="https://cdn.discordapp.com/attachments/585068497495654413/1067751122707689502/Page_1.png" height=400>
-<img src="https://cdn.discordapp.com/attachments/585068497495654413/1067796812540424283/gamedfdsf.gif" height=390></p>
+<p align="center"><img src="screenshots\example.png" height=400>
 
 **NOTE**: You can press the keyboard shortcut `Ctrl + Shift + Z` to perform OCR.
 
 ## Settings Menu
 
 <p align="center">
-<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098350494969253928/image.png" height="400">
-<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098350257651335299/image.png" height="400">
+<img src="screenshots\settings.png" height="400">
 </p>
 
 ## How to use Bing Chat
@@ -60,25 +58,20 @@ Example `cookies_bing_chat.json`
 
 You can see more [here](https://github.com/acheong08/EdgeGPT/blob/master/docs/README.md#getting-authentication-required).
 
-<p align="center">
-<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098685947480113336/image.png" height="400">
-<img src="https://cdn.discordapp.com/attachments/581018943041306641/1098694722752614420/image.png" height="400">
 
 </p>
 
-## How to use Bard
+## How to use Gemini
 
-- Go to https://bard.google.com/
-- F12 for console
+- get API key for the Gemini go to https://aistudio.google.com/app/apikey"
 - Copy the values
-  - Session: Go to Application → Cookies → \_\_Secure-1PSID. Copy the value of that cookie.
-  - Paste it into a file `cookies_bard.json`
+  - Paste it into a file `api_gemini.json`
   
 Example `cookies_bard.json`
 ```diff
-- {"cookie_bard": "Session: Go to Application > Cookies > __Secure-1PSID. Copy the value of that cookie."}
+- {"api_key": "get API key for the Gemini go to https://aistudio.google.com/app/apikey"}
 
-+ {"cookie_bard": "VA............................................"}
++ {"api_key": "AIza................................"}
 ```
 
 ## Installation
@@ -105,3 +98,11 @@ The app is built using the OpenAI's CHATGPT model, which is a powerful language 
 ## Credit
 
 Snipper source code from [textshot](https://github.com/ianzhao05/textshot/blob/master/textshot/textshot.py)
+
+## Changelog
+- 1.1 changelog:
+    - Add support for Gemini
+    - Remove Bard API
+    - Add snapshot support turkish
+    - Update modules
+- 1.0 Initial release
