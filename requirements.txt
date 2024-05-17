@@ -11,10 +11,10 @@ easyocr==1.6.2
 EdgeGPT==0.2.1
 et-xmlfile==1.1.0
 filelock==3.12.0
-flet==0.3.2
+flet
 future==0.18.3
 GoogleBard==0.0.7
-googletrans==4.0.0rc1
+googletrans
 h11==0.9.0
 h2==3.2.0
 hpack==3.0.0
@@ -37,7 +37,7 @@ networkx==3.1
 ninja==1.11.1
 numpy==1.24.1
 oauthlib==3.2.2
-openai==0.25.0
+openai
 opencv-python-headless==4.5.4.60
 openpyxl==3.0.10
 packaging==23.0

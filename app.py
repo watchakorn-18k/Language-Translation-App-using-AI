@@ -113,7 +113,7 @@ def main(page: ft.Page):
                 ft.TextButton("Cancel", on_click=close_dlg),
             ],
             content_padding=20,
-            actions_alignment=ft.MainAxisAlignment.END,
+            actions_alignment=ft.MainAxisAlignment.CENTER,
             on_dismiss=lambda e: print("Modal dialog dismissed!"),
         )
 
@@ -241,7 +241,7 @@ def main(page: ft.Page):
     )
     content = ft.Row(
         [result, copy_btn],
-        alignment=ft.MainAxisAlignment.END,
+        alignment=ft.MainAxisAlignment.CENTER,
         visible=False,
     )
 
@@ -293,7 +293,7 @@ def main(page: ft.Page):
                 ft.TextButton("Cancel", on_click=close_dlg),
             ],
             content_padding=5,
-            actions_alignment=ft.MainAxisAlignment.END,
+            actions_alignment=ft.MainAxisAlignment.CENTER,
             on_dismiss=lambda e: print("Modal dialog dismissed!"),
         )
 
@@ -314,7 +314,7 @@ def main(page: ft.Page):
             copy_btn2,
         ],
         visible=False,
-        alignment=ft.MainAxisAlignment.END,
+        alignment=ft.MainAxisAlignment.CENTER,
     )
 
     change_langauge_btn = ft.IconButton(
