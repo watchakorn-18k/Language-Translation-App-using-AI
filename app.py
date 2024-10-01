@@ -140,6 +140,7 @@ def main(page: ft.Page):
 
     def translating(e):
         apikey = ApikeyGPT().get_api_key()
+        model = ApikeyGPT().get_model()
         data = input_text.value
         translator = Translator()
         content.visible = False
@@ -155,7 +156,7 @@ def main(page: ft.Page):
             # ใส่ token คีย์ API
             openai.api_key = apikey
 
-            model_engine = "gpt-4o"
+            model_engine = model
 
             match translator_lang:
                 case "ChatGPT":
