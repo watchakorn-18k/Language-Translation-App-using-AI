@@ -366,7 +366,7 @@ def main(page: ft.Page):
                                 [
                                     ft.Markdown(
                                         f"""
-พัฒนาโดย [wk18k © {last_year}](https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT)\n
+Developed by [wk18k © {last_year}](https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT)\n
                         """
                                     ),
                                 ],
