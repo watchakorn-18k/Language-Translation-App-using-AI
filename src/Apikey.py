@@ -4,7 +4,7 @@ import json
 
 class ApikeyGPT:
     def __init__(self) -> None:
-        self.data = {"api_key": "API key for the CHATGPT"}
+        self.data = {"api_key": "API key for the CHATGPT", "model": "gpt-4o"}
 
     def create_file_json(self):
         with open("api_key_chatgpt.json", "w") as outfile:
