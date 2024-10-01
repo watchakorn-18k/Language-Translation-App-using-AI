@@ -1,4 +1,5 @@
 import flet as ft
+import httpcore
 
 from src.Snippers import main_snipper
 from src.Apikey import ApikeyGPT
@@ -9,6 +10,8 @@ import asyncio
 from src.Bingchat import BingChat
 from src.Gemini import GeminiAPI
 import datetime
+
+setattr(httpcore, "SyncHTTPTransport", "AsyncHTTPProxy")
 
 
 def main(page: ft.Page):
@@ -152,7 +155,7 @@ def main(page: ft.Page):
             # ใส่ token คีย์ API
             openai.api_key = apikey
 
-            model_engine = "text-davinci-003"
+            model_engine = "gpt-4o"
 
             match translator_lang:
                 case "ChatGPT":
