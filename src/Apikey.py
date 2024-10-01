@@ -24,3 +24,8 @@ class ApikeyGPT:
         with open("api_key_chatgpt.json") as json_file:
             data = json.load(json_file)
         return data["api_key"]
+
+    def get_model(self):
+        with open("api_key_chatgpt.json") as json_file:
+            data = json.load(json_file)
+        return data["model"]
