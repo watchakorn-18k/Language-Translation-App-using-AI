@@ -9,15 +9,29 @@ from googletrans import Translator, LANGCODES, LANGUAGES
 import asyncio
 from src.Bingchat import BingChat
 from src.Gemini import GeminiAPI
+from src.ChatGPT import ChatGPTAPI
 import datetime
+
+import re
 
 setattr(httpcore, "SyncHTTPTransport", "AsyncHTTPProxy")
 
 
+def debug_mode(status: bool):
+    if status:
+        global translator_lang
+        translator_lang = "Gemini"
+        input_text.value = "ตั้งอยู่เส้นสันกำแพง-แม่ออน ระหว่างทางไปน้ำพุร้อนสันกำแพง มีที่จอดรถสะดวก อาหารเป็นอาหารฝรั่งพวกพิซซ่า, พาสต้า, สั่งมาทานหลากหลายอย่า"
+        GeminiAPI().prompt_gemini_run(input_text.value)
+
+
 def main(page: ft.Page):
+    status_debug = False
     global translator_google_lang
     global translator_lang
-    translator_lang = "Google Translate"
+    global input_text
+    global cal_btn
+    translator_lang = "ChatGPT"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
     GeminiAPI().check_has_json()
@@ -56,6 +70,7 @@ def main(page: ft.Page):
         value=ch_eng,
         tooltip="Select Language for OCR",
     )
+    debug_mode(status_debug)
 
     def Snipper(e=None):
         pr.value = None
@@ -85,6 +100,7 @@ def main(page: ft.Page):
         def set_transtalor(e):
             global translator_lang
             translator_lang = dropdown_translator.value
+            print(translator_lang)
             close_dlg(e)
 
         translator_list = [
@@ -92,7 +108,6 @@ def main(page: ft.Page):
             "ChatGPT",
             "Bing Chat",
             "Gemini",
-            "ChatGPT(FREE)",
         ]
         dropdown_translator = ft.Dropdown(
             hint_text=translator_lang,
@@ -150,33 +165,22 @@ def main(page: ft.Page):
         if data != "":
             pr.value = None
             page.update()
-            import openai
-            import re
-
-            # ใส่ token คีย์ API
-            openai.api_key = apikey
-
+            response = ""
             model_engine = model
-
             match translator_lang:
                 case "ChatGPT":
                     # สร้างตัวตอบกลับ
                     try:
-                        completion = openai.Completion.create(
-                            engine=model_engine,
-                            prompt=f"{data} translate to write in words english",
-                            max_tokens=1024,
-                            n=1,
-                            stop=None,
-                            temperature=0.5,
+                        response = ChatGPTAPI(apikey).generate_response(
+                            data, model_engine
                         )
-                        response = completion.choices[0].text
-                    except:
+                    except Exception:
                         content.visible = True
                         content2.visible = True
                         change_langauge_btn.visible = True
                         result.value = "Invalid API key ChatGPT"
                         result2.value = "API Key ChatGPT in `api_key_chatgpt.json`"
+                        response = "Invalid API key ChatGPT"
                         pr.value = 0
                         page.update()
 
@@ -366,7 +370,7 @@ def main(page: ft.Page):
                                 [
                                     ft.Markdown(
                                         f"""
-พัฒนาโดย [wk18k © {last_year}](https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT)\n
+Developed by [wk18k © {last_year}](https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT)\n
                         """
                                     ),
                                 ],
