@@ -9,14 +9,28 @@ from googletrans import Translator, LANGCODES, LANGUAGES
 import asyncio
 from src.Bingchat import BingChat
 from src.Gemini import GeminiAPI
+from src.ChatGPT import ChatGPTAPI
 import datetime
+
+import re
 
 setattr(httpcore, "SyncHTTPTransport", "AsyncHTTPProxy")
 
 
+def debug_mode(status: bool):
+    if status:
+        global translator_lang
+        translator_lang = "Gemini"
+        input_text.value = "ตั้งอยู่เส้นสันกำแพง-แม่ออน ระหว่างทางไปน้ำพุร้อนสันกำแพง มีที่จอดรถสะดวก อาหารเป็นอาหารฝรั่งพวกพิซซ่า, พาสต้า, สั่งมาทานหลากหลายอย่า"
+        GeminiAPI().prompt_gemini_run(input_text.value)
+
+
 def main(page: ft.Page):
+    status_debug = False
     global translator_google_lang
     global translator_lang
+    global input_text
+    global cal_btn
     translator_lang = "ChatGPT"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
@@ -56,6 +70,7 @@ def main(page: ft.Page):
         value=ch_eng,
         tooltip="Select Language for OCR",
     )
+    debug_mode(status_debug)
 
     def Snipper(e=None):
         pr.value = None
@@ -93,7 +108,6 @@ def main(page: ft.Page):
             "ChatGPT",
             "Bing Chat",
             "Gemini",
-            "ChatGPT(FREE)",
         ]
         dropdown_translator = ft.Dropdown(
             hint_text=translator_lang,
@@ -141,7 +155,6 @@ def main(page: ft.Page):
 
     def translating(e):
         apikey = ApikeyGPT().get_api_key()
-        print("apikey: ", apikey)
         model = ApikeyGPT().get_model()
         data = input_text.value
         translator = Translator()
@@ -152,43 +165,22 @@ def main(page: ft.Page):
         if data != "":
             pr.value = None
             page.update()
-            import openai
-            import re
-
-            # ใส่ token คีย์ API
-            openai.api_key = apikey
-
-            model_engine = model
             response = ""
+            model_engine = model
             match translator_lang:
                 case "ChatGPT":
                     # สร้างตัวตอบกลับ
                     try:
-                        completion = openai.chat.completions.create(
-                            model=model_engine,
-                            temperature=0.1,
-                            max_tokens=2000,
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": f"""You are a translation expert. Translate into the target language while preserving the original sentence structure and meaning exactly.Translate in a neutral way, . try to preserve unique name such as company's name or brand's name.""",
-                                },
-                                {
-                                    "role": "user",
-                                    "content": "original_text:"
-                                    + data
-                                    + f"""\n Your translation in english:""",
-                                },
-                            ],
+                        response = ChatGPTAPI(apikey).generate_response(
+                            data, model_engine
                         )
-
-                        response = completion.choices[0].message.content
                     except Exception:
                         content.visible = True
                         content2.visible = True
                         change_langauge_btn.visible = True
                         result.value = "Invalid API key ChatGPT"
                         result2.value = "API Key ChatGPT in `api_key_chatgpt.json`"
+                        response = "Invalid API key ChatGPT"
                         pr.value = 0
                         page.update()
 
