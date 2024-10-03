@@ -100,6 +100,12 @@ The app is built using the OpenAI's CHATGPT model, which is a powerful language 
 Snipper source code from [textshot](https://github.com/ianzhao05/textshot/blob/master/textshot/textshot.py)
 
 ## Changelog
+- 1.2 changelog:
+    - Change prompt Gemini new
+    - Change prompt ChatGPT new
+    - Remove ChatGPTFREE
+    - can select model generative ai
+    - Update modules
 - 1.1 changelog:
     - Add support for Gemini
     - Remove Bard API
