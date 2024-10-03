@@ -17,7 +17,7 @@ setattr(httpcore, "SyncHTTPTransport", "AsyncHTTPProxy")
 def main(page: ft.Page):
     global translator_google_lang
     global translator_lang
-    translator_lang = "Google Translate"
+    translator_lang = "ChatGPT"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
     GeminiAPI().check_has_json()
@@ -85,6 +85,7 @@ def main(page: ft.Page):
         def set_transtalor(e):
             global translator_lang
             translator_lang = dropdown_translator.value
+            print(translator_lang)
             close_dlg(e)
 
         translator_list = [
@@ -140,6 +141,7 @@ def main(page: ft.Page):
 
     def translating(e):
         apikey = ApikeyGPT().get_api_key()
+        print("apikey: ", apikey)
         model = ApikeyGPT().get_model()
         data = input_text.value
         translator = Translator()
@@ -157,21 +159,31 @@ def main(page: ft.Page):
             openai.api_key = apikey
 
             model_engine = model
-
+            response = ""
             match translator_lang:
                 case "ChatGPT":
                     # สร้างตัวตอบกลับ
                     try:
-                        completion = openai.Completion.create(
-                            engine=model_engine,
-                            prompt=f"{data} translate to write in words english",
-                            max_tokens=1024,
-                            n=1,
-                            stop=None,
-                            temperature=0.5,
+                        completion = openai.chat.completions.create(
+                            model=model_engine,
+                            temperature=0.1,
+                            max_tokens=2000,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": f"""You are a translation expert. Translate into the target language while preserving the original sentence structure and meaning exactly.Translate in a neutral way, . try to preserve unique name such as company's name or brand's name.""",
+                                },
+                                {
+                                    "role": "user",
+                                    "content": "original_text:"
+                                    + data
+                                    + f"""\n Your translation in english:""",
+                                },
+                            ],
                         )
-                        response = completion.choices[0].text
-                    except:
+
+                        response = completion.choices[0].message.content
+                    except Exception:
                         content.visible = True
                         content2.visible = True
                         change_langauge_btn.visible = True
