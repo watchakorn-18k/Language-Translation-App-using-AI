@@ -21,7 +21,7 @@ def debug_mode(status: bool):
     if status:
         global translator_lang
         translator_lang = "Gemini"
-        input_text.value = "ตั้งอยู่เส้นสันกำแพง-แม่ออน ระหว่างทางไปน้ำพุร้อนสันกำแพง มีที่จอดรถสะดวก อาหารเป็นอาหารฝรั่งพวกพิซซ่า, พาสต้า, สั่งมาทานหลากหลายอย่า"
+        input_text.value = "สวัสดีจ้า"
         GeminiAPI().prompt_gemini_run(input_text.value)
 
 
@@ -31,7 +31,7 @@ def main(page: ft.Page):
     global translator_lang
     global input_text
     global cal_btn
-    translator_lang = "ChatGPT"
+    translator_lang = "Google Translate"
     translator_google_lang = "thai"
     ApikeyGPT().api_key_GPT()
     GeminiAPI().check_has_json()
