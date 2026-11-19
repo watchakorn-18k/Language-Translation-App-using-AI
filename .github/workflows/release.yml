@@ -25,11 +25,13 @@ jobs:
             os: macos-latest
             target: aarch64-apple-darwin
             asset_name: language-translation-app-macos-arm64.tar.gz
+            dmg_name: Translate-App-with-AI-macos-arm64.dmg
             bin_name: language-translation-app
           - name: Windows x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
             asset_name: language-translation-app-windows-x86_64.zip
+            dmg_name: ""
             bin_name: language-translation-app.exe
 
     steps:
@@ -55,14 +57,54 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package macOS artifact
+      - name: Package macOS .app, .dmg, and .tar.gz
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "master" ]; then VERSION="6.3.0"; fi
+
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" dist/
           tar -czf "${{ matrix.asset_name }}" -C dist "${{ matrix.bin_name }}"
           shasum -a 256 "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
+
+          APP_DIR="dist/Translate App with AI.app"
+          mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "$APP_DIR/Contents/MacOS/${{ matrix.bin_name }}"
+          chmod +x "$APP_DIR/Contents/MacOS/${{ matrix.bin_name }}"
+
+          cat > "$APP_DIR/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Translate App with AI</string>
+            <key>CFBundleDisplayName</key>
+            <string>Translate App with AI</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.wk18k.language-translation-app</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleExecutable</key>
+            <string>${{ matrix.bin_name }}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          mkdir -p dmg_stage
+          cp -R "$APP_DIR" dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "Translate App with AI" -srcfolder dmg_stage -ov -format UDZO "${{ matrix.dmg_name }}"
+          shasum -a 256 "${{ matrix.dmg_name }}" > "${{ matrix.dmg_name }}.sha256"
 
       - name: Package Windows artifact
         if: runner.os == 'Windows'
@@ -79,8 +121,10 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            ${{ matrix.asset_name }}
-            ${{ matrix.asset_name }}.sha256
+            *.tar.gz
+            *.dmg
+            *.zip
+            *.sha256
           retention-days: 7
 
   release:
@@ -102,5 +146,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             artifacts/*.tar.gz
+            artifacts/*.dmg
             artifacts/*.zip
             artifacts/*.sha256

@@ -1,10 +1,17 @@
 pub mod apikey;
 pub mod chatgpt;
 pub mod gemini;
+pub mod glossary;
 pub mod google_translate;
+pub mod history;
+pub mod hotkey;
 pub mod json_extract;
 pub mod providers;
+pub mod secrets;
 pub mod snipper;
 pub mod snipper_overlay;
+pub mod streaming;
 pub mod translator;
 pub mod ui;
+pub mod updater;
+pub mod vision_ocr;

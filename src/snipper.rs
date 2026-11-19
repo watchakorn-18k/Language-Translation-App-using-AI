@@ -60,6 +60,15 @@ impl OcrLanguage {
             OcrLanguage::TurkishEnglish => &["tr-TR", "en-US"],
         }
     }
+
+    /// Primary BCP-47 tag for Windows native WinRT `Windows.Media.Ocr.OcrEngine`.
+    pub fn windows_ocr_lang(self) -> &'static str {
+        match self {
+            OcrLanguage::ChineseEnglish => "zh-Hans-CN",
+            OcrLanguage::ThaiEnglish => "th-TH",
+            OcrLanguage::TurkishEnglish => "tr-TR",
+        }
+    }
 }
 
 /// Normalized region selected on the fullscreen drag-capture overlay (0.0..=1.0).
@@ -107,12 +116,12 @@ pub enum SnipperError {
     CaptureFailed(String),
     #[error("Failed to crop selected region: {0}")]
     CropFailed(String),
-    #[error("OCR failed (install `tesseract` or run on macOS with Vision): {0}")]
+    #[error("OCR failed (install `tesseract`, use Vision AI OCR, or run on macOS/Windows): {0}")]
     OcrFailed(String),
 }
 
-/// Silently captures the full primary screen to a temporary PNG file for the drag-capture overlay.
-pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
+/// Silently captures a specific display (1-based index on macOS/Windows, or primary when `None`).
+pub fn capture_display_to_temp(display_index: Option<usize>) -> Result<PathBuf, SnipperError> {
     let temp_path = std::env::temp_dir().join(format!(
         "translate_app_fullscreen_{}.png",
         std::process::id()
@@ -121,8 +130,14 @@ pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
 
     #[cfg(target_os = "macos")]
     {
-        let status = Command::new("screencapture")
-            .args(["-x", "-m"])
+        let mut cmd = Command::new("screencapture");
+        cmd.arg("-x");
+        if let Some(idx) = display_index {
+            cmd.arg("-D").arg(idx.to_string());
+        } else {
+            cmd.arg("-m");
+        }
+        let status = cmd
             .arg(&temp_path)
             .status()
             .map_err(|e| SnipperError::CaptureFailed(e.to_string()))?;
@@ -139,9 +154,12 @@ pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
     #[cfg(target_os = "windows")]
     {
         let path_str = temp_path.to_string_lossy().replace('\'', "''");
+        let idx = display_index.unwrap_or(1).saturating_sub(1);
         let ps_script = format!(
             "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \
-             $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \
+             $screens = [System.Windows.Forms.Screen]::AllScreens; \
+             $screen = if ({idx} -lt $screens.Length) {{ $screens[{idx}] }} else {{ [System.Windows.Forms.Screen]::PrimaryScreen }}; \
+             $bounds = $screen.Bounds; \
              $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height; \
              $g = [System.Drawing.Graphics]::FromImage($bmp); \
              $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size); \
@@ -164,6 +182,7 @@ pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let _ = display_index;
         let status = Command::new("gnome-screenshot")
             .arg("-f")
             .arg(&temp_path)
@@ -179,14 +198,16 @@ pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
     }
 }
 
-/// Crops the user-dragged rectangle from the captured fullscreen PNG into `orc.png`,
-/// runs OCR on it, copies the extracted text to the clipboard, and returns the text.
-/// (Direct Rust port of `Snipper.ocrOfDrawnRectangle()` in `src/Snippers.py`.)
-pub fn crop_and_ocr(
+/// Silently captures the full primary screen to a temporary PNG file for the drag-capture overlay.
+pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
+    capture_display_to_temp(None)
+}
+
+/// Crops the user-dragged rectangle from `fullscreen_image_path` into `orc.png` and cleans up the temp image.
+pub fn crop_selection_to_file(
     fullscreen_image_path: &Path,
     rect: NormalizedRect,
-    language: OcrLanguage,
-) -> Result<String, SnipperError> {
+) -> Result<PathBuf, SnipperError> {
     let img = image::open(fullscreen_image_path)
         .map_err(|e| SnipperError::CropFailed(e.to_string()))?;
 
@@ -203,18 +224,31 @@ pub fn crop_and_ocr(
         .min(img_h.saturating_sub(crop_y));
 
     let cropped = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
-    let output_path = Path::new(OCR_IMAGE_PATH);
+    let output_path = PathBuf::from(OCR_IMAGE_PATH);
     cropped
-        .save(output_path)
+        .save(&output_path)
         .map_err(|e| SnipperError::CropFailed(e.to_string()))?;
 
     let _ = std::fs::remove_file(fullscreen_image_path);
+    Ok(output_path)
+}
 
-    let text = run_ocr(output_path, language)?;
+/// Crops the user-dragged rectangle into `orc.png`, runs offline OCR, copies to clipboard, and returns text.
+pub fn crop_and_ocr(
+    fullscreen_image_path: &Path,
+    rect: NormalizedRect,
+    language: OcrLanguage,
+) -> Result<String, SnipperError> {
+    let output_path = crop_selection_to_file(fullscreen_image_path, rect)?;
+    let text = run_ocr(&output_path, language)?;
     copy_to_clipboard(&text);
     Ok(text)
 }
 
+/// Offline OCR chain:
+/// 1. `tesseract` CLI (if installed)
+/// 2. macOS Apple Vision (`VNRecognizeTextRequest`)
+/// 3. Windows native WinRT `Windows.Media.Ocr.OcrEngine` (zero external install)
 pub fn run_ocr(image_path: &Path, language: OcrLanguage) -> Result<String, SnipperError> {
     // 1. Try tesseract first if available on PATH.
     if let Ok(output) = Command::new("tesseract")
@@ -276,8 +310,52 @@ print(lines.joined(separator: " "))
         }
     }
 
+    // 3. Fallback on Windows: native WinRT Windows.Media.Ocr.OcrEngine (built into Windows 10/11).
+    #[cfg(target_os = "windows")]
+    {
+        let abs_path = std::fs::canonicalize(image_path).unwrap_or_else(|_| image_path.to_path_buf());
+        let path_str = abs_path.to_string_lossy().replace('\'', "''");
+        let lang_tag = language.windows_ocr_lang();
+        let ps_script = format!(
+            r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime]
+$null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
+$null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
+$null = [Windows.Globalization.Language, Windows.Globalization, ContentType=WindowsRuntime]
+function Await($op, $type) {{
+    $method = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {{ $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' }} | Select-Object -First 1
+    $task = $method.MakeGenericMethod($type).Invoke($null, @($op))
+    $task.Wait()
+    return $task.Result
+}}
+$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync('{path_str}')) ([Windows.Storage.StorageFile])
+$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+$decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+$bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+$lang = New-Object Windows.Globalization.Language('{lang_tag}')
+$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+if ($null -eq $engine) {{ $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() }}
+$res = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+Write-Output $res.Text
+"#
+        );
+
+        if let Ok(output) = Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .output()
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                return Ok(text);
+            }
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(SnipperError::OcrFailed(err));
+        }
+    }
+
     Err(SnipperError::OcrFailed(
-        "Neither `tesseract` nor macOS Vision OCR succeeded".to_string(),
+        "No offline OCR engine succeeded".to_string(),
     ))
 }
 
@@ -301,6 +379,7 @@ mod tests {
     fn maps_ocr_language_codes() {
         assert_eq!(OcrLanguage::ChineseEnglish.easyocr_codes(), &["ch_sim", "en"]);
         assert_eq!(OcrLanguage::ThaiEnglish.tesseract_lang(), "tha+eng");
+        assert_eq!(OcrLanguage::TurkishEnglish.windows_ocr_lang(), "tr-TR");
         assert_eq!(
             OcrLanguage::from_label("Turkish and English"),
             OcrLanguage::TurkishEnglish

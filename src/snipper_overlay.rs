@@ -253,16 +253,21 @@ impl Render for SnipperOverlay {
     }
 }
 
-/// Opens the frameless fullscreen drag-capture overlay window on the primary display.
+/// Opens the frameless fullscreen drag-capture overlay window on the specified display bounds
+/// (or the primary display if `target_bounds` is `None`).
 pub fn open_snipper_overlay(
     screenshot_path: PathBuf,
+    target_bounds: Option<Bounds<Pixels>>,
     on_finish: SnipCallback,
     cx: &mut App,
 ) -> std::result::Result<(), String> {
-    let display = cx
-        .primary_display()
-        .ok_or_else(|| "No primary display found".to_string())?;
-    let bounds = display.bounds();
+    let bounds = match target_bounds {
+        Some(b) => b,
+        None => cx
+            .primary_display()
+            .ok_or_else(|| "No primary display found".to_string())?
+            .bounds(),
+    };
 
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),

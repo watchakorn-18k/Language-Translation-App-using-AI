@@ -17,6 +17,8 @@ api_deepseek.json
 ollama_config.json
 custom_openai.json
 app_settings.json
+glossary.json
+translation_history.json
 /test_app
 test_app
 /_env
