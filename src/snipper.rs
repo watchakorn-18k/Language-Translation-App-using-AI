@@ -1,72 +1,108 @@
+use crate::builtin_ocr;
+use crate::paths;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
 
-pub const OCR_IMAGE_PATH: &str = "orc.png";
+pub const OCR_IMAGE_FILENAME: &str = "orc.png";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcrLanguage {
-    ChineseEnglish,
+    AutoDetect,
     ThaiEnglish,
+    ChineseSimplifiedEnglish,
+    ChineseTraditionalEnglish,
+    JapaneseEnglish,
+    KoreanEnglish,
     TurkishEnglish,
+    ArabicEnglish,
+    VietnameseEnglish,
 }
 
 impl OcrLanguage {
     pub const ALL: &'static [OcrLanguage] = &[
-        OcrLanguage::ChineseEnglish,
+        OcrLanguage::AutoDetect,
         OcrLanguage::ThaiEnglish,
+        OcrLanguage::ChineseSimplifiedEnglish,
+        OcrLanguage::ChineseTraditionalEnglish,
+        OcrLanguage::JapaneseEnglish,
+        OcrLanguage::KoreanEnglish,
         OcrLanguage::TurkishEnglish,
+        OcrLanguage::ArabicEnglish,
+        OcrLanguage::VietnameseEnglish,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
-            OcrLanguage::ChineseEnglish => "Chinese and English",
+            OcrLanguage::AutoDetect => "Auto-detect",
             OcrLanguage::ThaiEnglish => "Thai and English",
+            OcrLanguage::ChineseSimplifiedEnglish => "Chinese and English",
+            OcrLanguage::ChineseTraditionalEnglish => "Chinese (Trad.) and English",
+            OcrLanguage::JapaneseEnglish => "Japanese and English",
+            OcrLanguage::KoreanEnglish => "Korean and English",
             OcrLanguage::TurkishEnglish => "Turkish and English",
+            OcrLanguage::ArabicEnglish => "Arabic and English",
+            OcrLanguage::VietnameseEnglish => "Vietnamese and English",
         }
     }
 
     pub fn from_label(label: &str) -> Self {
         match label {
+            "Auto-detect" => OcrLanguage::AutoDetect,
             "Thai and English" => OcrLanguage::ThaiEnglish,
+            "Chinese (Trad.) and English" => OcrLanguage::ChineseTraditionalEnglish,
+            "Japanese and English" => OcrLanguage::JapaneseEnglish,
+            "Korean and English" => OcrLanguage::KoreanEnglish,
             "Turkish and English" => OcrLanguage::TurkishEnglish,
-            _ => OcrLanguage::ChineseEnglish,
-        }
-    }
-
-    /// Language codes matching `src/Snippers.py` (`easyocr`).
-    pub fn easyocr_codes(self) -> &'static [&'static str] {
-        match self {
-            OcrLanguage::ChineseEnglish => &["ch_sim", "en"],
-            OcrLanguage::ThaiEnglish => &["th", "en"],
-            OcrLanguage::TurkishEnglish => &["tr", "en"],
+            "Arabic and English" => OcrLanguage::ArabicEnglish,
+            "Vietnamese and English" => OcrLanguage::VietnameseEnglish,
+            _ => OcrLanguage::ChineseSimplifiedEnglish,
         }
     }
 
     /// Language codes for `tesseract`.
     pub fn tesseract_lang(self) -> &'static str {
         match self {
-            OcrLanguage::ChineseEnglish => "chi_sim+eng",
+            OcrLanguage::AutoDetect => "eng",
             OcrLanguage::ThaiEnglish => "tha+eng",
+            OcrLanguage::ChineseSimplifiedEnglish => "chi_sim+eng",
+            OcrLanguage::ChineseTraditionalEnglish => "chi_tra+eng",
+            OcrLanguage::JapaneseEnglish => "jpn+eng",
+            OcrLanguage::KoreanEnglish => "kor+eng",
             OcrLanguage::TurkishEnglish => "tur+eng",
+            OcrLanguage::ArabicEnglish => "ara+eng",
+            OcrLanguage::VietnameseEnglish => "vie+eng",
         }
     }
 
     /// BCP-47 language codes for macOS Vision `VNRecognizeTextRequest`.
+    /// Empty slice signals `automaticallyDetectsLanguage = true`.
     pub fn apple_vision_langs(self) -> &'static [&'static str] {
         match self {
-            OcrLanguage::ChineseEnglish => &["zh-Hans", "en-US"],
+            OcrLanguage::AutoDetect => &[],
             OcrLanguage::ThaiEnglish => &["th-TH", "en-US"],
+            OcrLanguage::ChineseSimplifiedEnglish => &["zh-Hans", "en-US"],
+            OcrLanguage::ChineseTraditionalEnglish => &["zh-Hant", "en-US"],
+            OcrLanguage::JapaneseEnglish => &["ja-JP", "en-US"],
+            OcrLanguage::KoreanEnglish => &["ko-KR", "en-US"],
             OcrLanguage::TurkishEnglish => &["tr-TR", "en-US"],
+            OcrLanguage::ArabicEnglish => &["ar-SA", "en-US"],
+            OcrLanguage::VietnameseEnglish => &["vi-VN", "en-US"],
         }
     }
 
     /// Primary BCP-47 tag for Windows native WinRT `Windows.Media.Ocr.OcrEngine`.
     pub fn windows_ocr_lang(self) -> &'static str {
         match self {
-            OcrLanguage::ChineseEnglish => "zh-Hans-CN",
+            OcrLanguage::AutoDetect => "en-US",
             OcrLanguage::ThaiEnglish => "th-TH",
+            OcrLanguage::ChineseSimplifiedEnglish => "zh-Hans-CN",
+            OcrLanguage::ChineseTraditionalEnglish => "zh-Hant-TW",
+            OcrLanguage::JapaneseEnglish => "ja-JP",
+            OcrLanguage::KoreanEnglish => "ko-KR",
             OcrLanguage::TurkishEnglish => "tr-TR",
+            OcrLanguage::ArabicEnglish => "ar-SA",
+            OcrLanguage::VietnameseEnglish => "vi-VN",
         }
     }
 }
@@ -116,7 +152,7 @@ pub enum SnipperError {
     CaptureFailed(String),
     #[error("Failed to crop selected region: {0}")]
     CropFailed(String),
-    #[error("OCR failed (install `tesseract`, use Vision AI OCR, or run on macOS/Windows): {0}")]
+    #[error("OCR failed: {0}")]
     OcrFailed(String),
 }
 
@@ -168,7 +204,13 @@ pub fn capture_display_to_temp(display_index: Option<usize>) -> Result<PathBuf, 
         );
 
         let status = Command::new("powershell")
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .args([
+                "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &ps_script,
+            ])
             .status()
             .map_err(|e| SnipperError::CaptureFailed(e.to_string()))?;
 
@@ -198,18 +240,14 @@ pub fn capture_display_to_temp(display_index: Option<usize>) -> Result<PathBuf, 
     }
 }
 
-/// Silently captures the full primary screen to a temporary PNG file for the drag-capture overlay.
-pub fn capture_fullscreen_to_temp() -> Result<PathBuf, SnipperError> {
-    capture_display_to_temp(None)
-}
-
-/// Crops the user-dragged rectangle from `fullscreen_image_path` into `orc.png` and cleans up the temp image.
+/// Crops the user-dragged rectangle from `fullscreen_image_path` into the app cache directory
+/// (`<data_dir>/cache/orc.png`) and cleans up the temp fullscreen image.
 pub fn crop_selection_to_file(
     fullscreen_image_path: &Path,
     rect: NormalizedRect,
 ) -> Result<PathBuf, SnipperError> {
-    let img = image::open(fullscreen_image_path)
-        .map_err(|e| SnipperError::CropFailed(e.to_string()))?;
+    let img =
+        image::open(fullscreen_image_path).map_err(|e| SnipperError::CropFailed(e.to_string()))?;
 
     let img_w = img.width();
     let img_h = img.height();
@@ -224,7 +262,7 @@ pub fn crop_selection_to_file(
         .min(img_h.saturating_sub(crop_y));
 
     let cropped = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
-    let output_path = PathBuf::from(OCR_IMAGE_PATH);
+    let output_path = paths::cache_dir().join(OCR_IMAGE_FILENAME);
     cropped
         .save(&output_path)
         .map_err(|e| SnipperError::CropFailed(e.to_string()))?;
@@ -233,7 +271,7 @@ pub fn crop_selection_to_file(
     Ok(output_path)
 }
 
-/// Crops the user-dragged rectangle into `orc.png`, runs offline OCR, copies to clipboard, and returns text.
+/// Crops the user-dragged rectangle, runs offline OCR, copies to clipboard, and returns text.
 pub fn crop_and_ocr(
     fullscreen_image_path: &Path,
     rect: NormalizedRect,
@@ -245,33 +283,75 @@ pub fn crop_and_ocr(
     Ok(text)
 }
 
-/// Offline OCR chain:
-/// 1. `tesseract` CLI (if installed)
-/// 2. macOS Apple Vision (`VNRecognizeTextRequest`)
-/// 3. Windows native WinRT `Windows.Media.Ocr.OcrEngine` (zero external install)
-pub fn run_ocr(image_path: &Path, language: OcrLanguage) -> Result<String, SnipperError> {
-    // 1. Try tesseract first if available on PATH.
-    if let Ok(output) = Command::new("tesseract")
-        .arg(image_path)
-        .arg("stdout")
-        .args(["-l", language.tesseract_lang()])
+/// Parses `tesseract --list-langs` output into a list of installed language codes.
+pub fn parse_tesseract_langs(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .skip(1)
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Returns `true` only if every language in `spec` (e.g. `"tha+eng"`) is present in `installed`.
+pub fn tesseract_supports_all_langs(spec: &str, installed: &[String]) -> bool {
+    spec.split('+')
+        .filter(|s| !s.is_empty())
+        .all(|needed| installed.iter().any(|lang| lang == needed))
+}
+
+fn run_tesseract_if_supported(image_path: &Path, lang_spec: &str) -> Option<String> {
+    let list_out = Command::new("tesseract")
+        .arg("--list-langs")
         .output()
-    {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(text);
-        }
+        .ok()?;
+    if !list_out.status.success() {
+        return None;
+    }
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&list_out.stdout),
+        String::from_utf8_lossy(&list_out.stderr)
+    );
+    let installed = parse_tesseract_langs(&combined);
+    if !tesseract_supports_all_langs(lang_spec, &installed) {
+        return None;
     }
 
-    // 2. Fallback on macOS: Apple Vision framework via `swift`.
+    let output = Command::new("tesseract")
+        .arg(image_path)
+        .arg("stdout")
+        .args(["-l", lang_spec])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("Failed loading language") {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Offline OCR chain:
+/// - macOS: Apple Vision (`VNRecognizeTextRequest`, accurate Thai/CJK/Arabic/Latin natively) → `tesseract` (if all requested languages installed) → built-in `ocrs`
+/// - Windows: `tesseract` (if all requested languages installed) → native WinRT `Windows.Media.Ocr.OcrEngine` → built-in `ocrs`
+/// - Linux: `tesseract` (if all requested languages installed) → built-in `ocrs`
+pub fn run_ocr(image_path: &Path, language: OcrLanguage) -> Result<String, SnipperError> {
     #[cfg(target_os = "macos")]
     {
-        let langs_literal = language
-            .apple_vision_langs()
-            .iter()
-            .map(|l| format!("\"{l}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let langs = language.apple_vision_langs();
+        let lang_setup = if langs.is_empty() {
+            "request.automaticallyDetectsLanguage = true".to_string()
+        } else {
+            let literal = langs
+                .iter()
+                .map(|l| format!("\"{l}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("request.recognitionLanguages = [{literal}]")
+        };
 
         let swift_script = format!(
             r#"
@@ -286,7 +366,7 @@ guard let image = NSImage(contentsOf: url),
 }}
 let request = VNRecognizeTextRequest()
 request.recognitionLevel = .accurate
-request.recognitionLanguages = [{langs_literal}]
+{lang_setup}
 request.usesLanguageCorrection = true
 let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 try handler.perform([request])
@@ -303,17 +383,21 @@ print(lines.joined(separator: " "))
         {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                return Ok(text);
+                if !text.is_empty() {
+                    return Ok(text);
+                }
             }
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(SnipperError::OcrFailed(err));
         }
     }
 
-    // 3. Fallback on Windows: native WinRT Windows.Media.Ocr.OcrEngine (built into Windows 10/11).
+    if let Some(text) = run_tesseract_if_supported(image_path, language.tesseract_lang()) {
+        return Ok(text);
+    }
+
     #[cfg(target_os = "windows")]
     {
-        let abs_path = std::fs::canonicalize(image_path).unwrap_or_else(|_| image_path.to_path_buf());
+        let abs_path =
+            std::fs::canonicalize(image_path).unwrap_or_else(|_| image_path.to_path_buf());
         let path_str = abs_path.to_string_lossy().replace('\'', "''");
         let lang_tag = language.windows_ocr_lang();
         let ps_script = format!(
@@ -342,20 +426,34 @@ Write-Output $res.Text
         );
 
         if let Ok(output) = Command::new("powershell")
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .args([
+                "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &ps_script,
+            ])
             .output()
         {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                return Ok(text);
+                if !text.is_empty() {
+                    return Ok(text);
+                }
             }
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(SnipperError::OcrFailed(err));
+        }
+    }
+
+    // Pure-Rust offline fallback (`ocrs` + `rten` ONNX models in `<data_dir>/models`)
+    if let Ok(text) = builtin_ocr::recognize_image(image_path) {
+        if !text.is_empty() {
+            return Ok(text);
         }
     }
 
     Err(SnipperError::OcrFailed(
-        "No offline OCR engine succeeded".to_string(),
+        "No offline OCR engine succeeded (for Tesseract, install language packs e.g. `brew install tesseract-lang`, or enable Vision AI OCR in Settings)"
+            .to_string(),
     ))
 }
 
@@ -376,13 +474,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_ocr_language_codes() {
-        assert_eq!(OcrLanguage::ChineseEnglish.easyocr_codes(), &["ch_sim", "en"]);
+    fn maps_all_ocr_language_codes() {
+        assert_eq!(OcrLanguage::ALL.len(), 9);
+        assert!(OcrLanguage::AutoDetect.apple_vision_langs().is_empty());
         assert_eq!(OcrLanguage::ThaiEnglish.tesseract_lang(), "tha+eng");
-        assert_eq!(OcrLanguage::TurkishEnglish.windows_ocr_lang(), "tr-TR");
+        assert_eq!(OcrLanguage::JapaneseEnglish.tesseract_lang(), "jpn+eng");
         assert_eq!(
-            OcrLanguage::from_label("Turkish and English"),
-            OcrLanguage::TurkishEnglish
+            OcrLanguage::KoreanEnglish.apple_vision_langs(),
+            &["ko-KR", "en-US"]
+        );
+        assert_eq!(OcrLanguage::ArabicEnglish.windows_ocr_lang(), "ar-SA");
+        assert_eq!(
+            OcrLanguage::from_label("Japanese and English"),
+            OcrLanguage::JapaneseEnglish
+        );
+        assert_eq!(
+            OcrLanguage::from_label("Auto-detect"),
+            OcrLanguage::AutoDetect
         );
     }
 
@@ -398,5 +506,18 @@ mod tests {
     #[test]
     fn rejects_tiny_accidental_click() {
         assert!(NormalizedRect::from_points(10.0, 10.0, 12.0, 11.0, 1000.0, 500.0).is_none());
+    }
+
+    #[test]
+    fn tesseract_lang_check_rejects_missing_thai_pack() {
+        let output = "List of available languages in \"/opt/homebrew/share/tessdata/\" (3):\neng\nosd\nsnum\n";
+        let installed = parse_tesseract_langs(output);
+        assert_eq!(installed, vec!["eng", "osd", "snum"]);
+        assert!(tesseract_supports_all_langs("eng", &installed));
+        assert!(!tesseract_supports_all_langs("tha+eng", &installed));
+        assert!(!tesseract_supports_all_langs("chi_sim+eng", &installed));
+
+        let with_thai = vec!["eng".into(), "tha".into()];
+        assert!(tesseract_supports_all_langs("tha+eng", &with_thai));
     }
 }

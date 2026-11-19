@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Translate App with AI
+Comment=Desktop translation utility with OCR and modern AI models
+Exec=language-translation-app
+Icon=language-translation-app
+Terminal=false
+Type=Application
+Categories=Utility;Office;Translation;

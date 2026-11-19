@@ -1,18 +1,25 @@
+use crate::clipboard_watch::ClipboardWatcher;
 use crate::glossary::GlossaryStore;
 use crate::google_translate::{lang_code_for_name, language_names};
 use crate::history::HistoryStore;
 use crate::hotkey::GlobalOcrHotkey;
+use crate::paths;
 use crate::providers::{AppPreferences, load_app_preferences, save_app_preferences};
 use crate::snipper::{
     OcrLanguage, capture_display_to_temp, copy_to_clipboard, crop_and_ocr, crop_selection_to_file,
+    read_from_clipboard,
 };
 use crate::snipper_overlay::open_snipper_overlay;
+use crate::theme::{Palette, ThemeChoice};
+use crate::translation_overlay::open_translation_overlay;
 use crate::translator::{
     TranslateOptions, TranslatorProvider, init_config_files, retranslate_secondary,
     translate_text_with_options,
 };
-use crate::updater::{UpdateInfo, check_for_update};
+use crate::tts::speak_text;
+use crate::updater::{UpdateInfo, check_for_update, download_release_asset};
 use crate::vision_ocr::vision_ocr_and_translate;
+use crate::window_level::set_always_on_top;
 use chrono::Datelike;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -22,7 +29,7 @@ use gpui_kit::component::progress::Progress;
 use gpui_kit::component::searchable_list::SearchableVec;
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{Icon, IndexPath, StyledExt, WindowExt};
+use gpui_kit::component::{Icon, IndexPath, StyledExt, Theme, ThemeMode, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use std::sync::Arc;
@@ -32,16 +39,11 @@ use tokio::sync::mpsc;
 
 actions!(translate_app, [TriggerOcr]);
 
-// Graphite Dark neutral ramp + single amber-ochre accent (unslop direction)
-const BG_PAGE: u32 = 0x141415;
-const BG_CARD: u32 = 0x19191b;
-const BG_RAISED: u32 = 0x232325;
-const BORDER_HAIRLINE: u32 = 0xededed14; // #ededed at ~8% opacity
-const BORDER_SUBTLE: u32 = 0xededed1f; // #ededed at ~12% opacity
-const TEXT_PRIMARY: u32 = 0xededed;
-const TEXT_SECONDARY: u32 = 0xa1a1a6;
-const TEXT_MUTED: u32 = 0x85858b;
-const ACCENT_AMBER: u32 = 0xd4973b;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsTab {
+    Engine,
+    Behavior,
+}
 
 pub struct TranslateApp {
     runtime: Arc<Runtime>,
@@ -49,8 +51,10 @@ pub struct TranslateApp {
     ocr_lang_select: Entity<SelectState<Vec<SharedString>>>,
     translator_provider: TranslatorProvider,
     prefs: AppPreferences,
+    settings_tab: SettingsTab,
     history: HistoryStore,
     glossary: GlossaryStore,
+    clipboard_watcher: ClipboardWatcher,
     update_info: Option<UpdateInfo>,
     _global_hotkey: Option<GlobalOcrHotkey>,
     result_primary: String,
@@ -62,7 +66,11 @@ pub struct TranslateApp {
 }
 
 impl TranslateApp {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        window: &mut Window,
+        global_hotkey: Option<GlobalOcrHotkey>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         init_config_files();
 
         let runtime = Arc::new(
@@ -71,22 +79,45 @@ impl TranslateApp {
 
         let input_state = cx.new(|cx| InputState::new(window, cx).placeholder("Text to translate"));
 
+        let prefs = load_app_preferences();
         let ocr_options: Vec<SharedString> = OcrLanguage::ALL
             .iter()
             .map(|l| SharedString::from(l.label()))
             .collect();
+        let initial_ocr_idx = OcrLanguage::ALL
+            .iter()
+            .position(|l| l.label() == prefs.ocr_language)
+            .unwrap_or(2);
         let ocr_lang_select = cx.new(|cx| {
-            SelectState::new(ocr_options, Some(IndexPath::default()), window, cx)
+            SelectState::new(
+                ocr_options,
+                Some(IndexPath::default().row(initial_ocr_idx)),
+                window,
+                cx,
+            )
         });
 
+        // Persist OCR language selection when changed in the bottom dock
+        cx.subscribe_in(
+            &ocr_lang_select,
+            window,
+            move |this, _select, event: &SelectEvent<Vec<SharedString>>, _window, cx| {
+                if let SelectEvent::Confirm(Some(label)) = event {
+                    this.prefs.ocr_language = label.to_string();
+                    this.persist_prefs();
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
         let focus_handle = cx.focus_handle();
-        let prefs = load_app_preferences();
         let translator_provider = TranslatorProvider::from_label(&prefs.translator);
         let history = HistoryStore::default();
         let glossary = GlossaryStore::default();
+        let clipboard_watcher = ClipboardWatcher::new(read_from_clipboard());
 
-        // Phase 1: Register OS-wide Global Hotkey (Cmd+Shift+Z / Ctrl+Shift+Z)
-        let global_hotkey = GlobalOcrHotkey::register();
+        // Phase 1 & 4: Poll OS-wide global hotkey registered on main thread
         if global_hotkey.is_some() {
             cx.spawn_in(window, async move |this, cx| {
                 loop {
@@ -111,7 +142,35 @@ impl TranslateApp {
             .detach();
         }
 
-        // Phase 3: Check GitHub Releases asynchronously for app updates
+        // Phase 6: Clipboard watcher loop (active when `prefs.clipboard_watch` is enabled)
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(450))
+                    .await;
+                let enabled = this
+                    .read_with(cx, |app, _| app.prefs.clipboard_watch && !app.is_loading)
+                    .unwrap_or(false);
+                if !enabled {
+                    continue;
+                }
+                let clip = cx
+                    .background_executor()
+                    .spawn(async move { read_from_clipboard() })
+                    .await;
+                let _ = this.update_in(cx, |app, window, cx| {
+                    if let Some(new_text) = app.clipboard_watcher.poll(&clip) {
+                        app.input_state.update(cx, |s, cx| {
+                            s.set_value(new_text, window, cx);
+                        });
+                        app.start_translate(window, cx);
+                    }
+                });
+            }
+        })
+        .detach();
+
+        // Phase 3 & 5: Check GitHub Releases asynchronously for app updates
         let rt_for_update = Arc::clone(&runtime);
         cx.spawn_in(window, async move |this, cx| {
             let current = env!("CARGO_PKG_VERSION").to_string();
@@ -134,8 +193,10 @@ impl TranslateApp {
             ocr_lang_select,
             translator_provider,
             prefs,
+            settings_tab: SettingsTab::Engine,
             history,
             glossary,
+            clipboard_watcher,
             update_info: None,
             _global_hotkey: global_hotkey,
             result_primary: String::new(),
@@ -145,6 +206,27 @@ impl TranslateApp {
             status_hint: None,
             focus_handle,
         }
+    }
+
+    fn palette(&self, window: &Window) -> Palette {
+        let system_dark = matches!(
+            window.appearance(),
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        );
+        Palette::for_choice(self.prefs.theme, system_dark)
+    }
+
+    fn apply_theme(&self, window: &mut Window, cx: &mut App) {
+        let system_dark = matches!(
+            window.appearance(),
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        );
+        let mode = if self.prefs.theme.is_dark(system_dark) {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        };
+        Theme::change(mode, Some(window), cx);
     }
 
     fn persist_prefs(&self) {
@@ -157,7 +239,7 @@ impl TranslateApp {
             .read(cx)
             .selected_value()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| OcrLanguage::ChineseEnglish.label().to_string());
+            .unwrap_or_else(|| self.prefs.ocr_language.clone());
         OcrLanguage::from_label(&label)
     }
 
@@ -176,6 +258,15 @@ impl TranslateApp {
     }
 
     fn start_translate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.start_translate_inner(false, window, cx);
+    }
+
+    fn start_translate_inner(
+        &mut self,
+        from_ocr: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.is_loading {
             return;
         }
@@ -183,6 +274,9 @@ impl TranslateApp {
         let input_text = self.input_state.read(cx).value().to_string();
         let provider = self.translator_provider;
         let secondary_lang = self.prefs.target_language.clone();
+        let show_overlay = from_ocr && self.prefs.translation_overlay;
+        let palette = self.palette(window);
+        let target_iso = self.secondary_iso_code();
         let options = TranslateOptions {
             direct_target_translation: self.prefs.direct_target_translation,
             streaming_enabled: self.prefs.streaming_enabled,
@@ -200,7 +294,6 @@ impl TranslateApp {
 
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
-        // Live streaming consumer updates the Bilingual Sheet as tokens arrive
         if options.streaming_enabled && provider != TranslatorProvider::GoogleTranslate {
             cx.spawn_in(window, async move |this, cx| {
                 let mut streamed = String::new();
@@ -249,6 +342,15 @@ impl TranslateApp {
                         &outcome.secondary_localized,
                     );
                 }
+                if show_overlay {
+                    open_translation_overlay(
+                        outcome.primary_english,
+                        outcome.secondary_localized,
+                        target_iso,
+                        palette,
+                        cx,
+                    );
+                }
                 cx.notify();
             });
         })
@@ -265,11 +367,13 @@ impl TranslateApp {
         let main_window = window.window_handle();
         let use_vision = self.prefs.vision_ocr && self.translator_provider.supports_vision();
         let auto_translate = self.prefs.auto_translate_after_ocr;
+        let show_overlay = self.prefs.translation_overlay;
+        let palette = self.palette(window);
+        let target_iso = self.secondary_iso_code();
         let provider = self.translator_provider;
         let target_lang = self.prefs.target_language.clone();
         let rt = Arc::clone(&self.runtime);
 
-        // Phase 2: Multi-monitor awareness — capture the display hosting the active window
         let active_display = window.display(cx);
         let target_bounds = active_display.as_ref().map(|d| d.bounds());
         let display_index = active_display.as_ref().and_then(|active| {
@@ -324,10 +428,10 @@ impl TranslateApp {
                                 let input_after = input_for_cb.clone();
                                 let rt_inner = Arc::clone(&rt);
                                 let target_inner = target_lang.clone();
+                                let iso_inner = target_iso.clone();
 
                                 cx.spawn(async move |cx| {
                                     if use_vision {
-                                        // Phase 2: Multimodal Vision AI OCR + Translation in 1 call
                                         let vision_res = cx
                                             .background_executor()
                                             .spawn(async move {
@@ -349,6 +453,8 @@ impl TranslateApp {
                                                 app.status_hint = None;
                                                 match vision_res {
                                                     Ok(out) => {
+                                                        app.clipboard_watcher
+                                                            .mark_self_copy(&out.source_text);
                                                         copy_to_clipboard(&out.source_text);
                                                         input_after.update(cx, |state, cx| {
                                                             state.set_value(
@@ -368,6 +474,15 @@ impl TranslateApp {
                                                             &app.prefs.target_language,
                                                             &out.secondary_localized,
                                                         );
+                                                        if show_overlay {
+                                                            open_translation_overlay(
+                                                                out.primary_english,
+                                                                out.secondary_localized,
+                                                                iso_inner,
+                                                                palette,
+                                                                cx,
+                                                            );
+                                                        }
                                                     }
                                                     Err(err) => {
                                                         app.result_primary =
@@ -381,12 +496,11 @@ impl TranslateApp {
                                             });
                                         });
                                     } else {
-                                        // Offline OCR chain (Tesseract / Apple Vision / Windows WinRT)
                                         let ocr_result = cx
                                             .background_executor()
-                                            .spawn(async move {
-                                                crop_and_ocr(&path, rect, ocr_lang)
-                                            })
+                                            .spawn(
+                                                async move { crop_and_ocr(&path, rect, ocr_lang) },
+                                            )
                                             .await;
 
                                         let _ = cx.update_window(main_window, |_, window, cx| {
@@ -395,6 +509,8 @@ impl TranslateApp {
                                                 app.status_hint = None;
                                                 match ocr_result {
                                                     Ok(scanned_text) => {
+                                                        app.clipboard_watcher
+                                                            .mark_self_copy(&scanned_text);
                                                         let has_text =
                                                             !scanned_text.trim().is_empty();
                                                         input_after.update(cx, |state, cx| {
@@ -405,15 +521,16 @@ impl TranslateApp {
                                                             );
                                                         });
                                                         if auto_translate && has_text {
-                                                            app.start_translate(window, cx);
+                                                            app.start_translate_inner(
+                                                                true, window, cx,
+                                                            );
                                                             return;
                                                         }
                                                         app.result_primary =
                                                             "Scan completed, press Translate"
                                                                 .to_string();
                                                         app.result_secondary =
-                                                            "สแกนเสร็จแล้ว กดปุ่มแปลภาษา"
-                                                                .to_string();
+                                                            "สแกนเสร็จแล้ว กดปุ่มแปลภาษา".to_string();
                                                     }
                                                     Err(err) => {
                                                         app.result_primary =
@@ -460,6 +577,50 @@ impl TranslateApp {
         .detach();
     }
 
+    fn download_update(&mut self, info: UpdateInfo, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(url), Some(asset_name)) = (info.download_url.clone(), info.asset_name.clone())
+        else {
+            cx.open_url(&info.release_url);
+            return;
+        };
+
+        let rt = Arc::clone(&self.runtime);
+        let dest_dir = paths::downloads_dir();
+        let fallback_url = info.release_url;
+        self.status_hint = Some(format!("Downloading {asset_name}..."));
+        cx.notify();
+
+        cx.spawn_in(window, async move |this, cx| {
+            let res =
+                cx.background_executor()
+                    .spawn(async move {
+                        rt.block_on(download_release_asset(&url, &asset_name, &dest_dir))
+                    })
+                    .await;
+
+            let _ = this.update_in(cx, |app, window, cx| {
+                app.status_hint = None;
+                match res {
+                    Ok(saved_path) => {
+                        cx.reveal_path(&saved_path);
+                        window.push_notification(
+                            Notification::success(format!(
+                                "Downloaded to {}",
+                                saved_path.display()
+                            )),
+                            cx,
+                        );
+                    }
+                    Err(_) => {
+                        cx.open_url(&fallback_url);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn open_settings_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let current_provider = self.translator_provider;
         let current_settings = current_provider.load_settings();
@@ -477,6 +638,23 @@ impl TranslateApp {
             SelectState::new(
                 provider_options,
                 Some(IndexPath::default().row(initial_idx)),
+                window,
+                cx,
+            )
+        });
+
+        let theme_options: Vec<SharedString> = ThemeChoice::ALL
+            .iter()
+            .map(|t| SharedString::from(t.label()))
+            .collect();
+        let initial_theme_idx = ThemeChoice::ALL
+            .iter()
+            .position(|t| *t == self.prefs.theme)
+            .unwrap_or(0);
+        let theme_select = cx.new(|cx| {
+            SelectState::new(
+                theme_options,
+                Some(IndexPath::default().row(initial_theme_idx)),
                 window,
                 cx,
             )
@@ -520,19 +698,46 @@ impl TranslateApp {
         )
         .detach();
 
+        let this_theme = cx.entity().downgrade();
+        cx.subscribe_in(
+            &theme_select,
+            window,
+            move |_this, _select, event: &SelectEvent<Vec<SharedString>>, window, cx| {
+                if let SelectEvent::Confirm(Some(label)) = event {
+                    let chosen = ThemeChoice::from_label(label.as_ref());
+                    if let Some(app_entity) = this_theme.upgrade() {
+                        app_entity.update(cx, |app, cx| {
+                            app.prefs.theme = chosen;
+                            app.persist_prefs();
+                            app.apply_theme(window, cx);
+                            cx.notify();
+                        });
+                    }
+                }
+            },
+        )
+        .detach();
+
         let this_entity = cx.entity().downgrade();
 
-        window.open_dialog(cx, move |dialog, _window, cx| {
+        window.open_dialog(cx, move |dialog, window, cx| {
             let active_provider = select_state
                 .read(cx)
                 .selected_value()
                 .map(|s| TranslatorProvider::from_label(s.as_ref()))
                 .unwrap_or(current_provider);
 
-            let current_prefs = this_entity
+            let (current_prefs, active_tab, palette) = this_entity
                 .upgrade()
-                .map(|e| e.read(cx).prefs.clone())
-                .unwrap_or_default();
+                .map(|e| {
+                    let app = e.read(cx);
+                    (app.prefs.clone(), app.settings_tab, app.palette(window))
+                })
+                .unwrap_or((
+                    AppPreferences::default(),
+                    SettingsTab::Engine,
+                    Palette::DARK,
+                ));
 
             let select_for_save = select_state.clone();
             let model_for_save = model_input.clone();
@@ -540,159 +745,288 @@ impl TranslateApp {
             let url_for_save = base_url_input.clone();
             let this_for_save = this_entity.clone();
 
+            let this_tab_engine = this_entity.clone();
+            let this_tab_behavior = this_entity.clone();
             let this_auto = this_entity.clone();
             let this_direct = this_entity.clone();
             let this_vision = this_entity.clone();
             let this_stream = this_entity.clone();
+            let this_overlay = this_entity.clone();
+            let this_clipboard = this_entity.clone();
             let this_keychain = this_entity.clone();
+
+            let tab_bar = div()
+                .h_flex()
+                .items_center()
+                .w_full()
+                .p(px(4.))
+                .gap(px(4.))
+                .rounded(px(8.))
+                .bg(rgb(palette.raised))
+                .border_1()
+                .border_color(rgba(palette.border_hairline))
+                .child(
+                    div()
+                        .id("tab-engine")
+                        .flex_1()
+                        .h_flex()
+                        .items_center()
+                        .justify_center()
+                        .h(px(28.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .when(active_tab == SettingsTab::Engine, |d| {
+                            d.bg(rgb(palette.card))
+                                .text_color(rgb(palette.text_primary))
+                        })
+                        .when(active_tab != SettingsTab::Engine, |d| {
+                            d.text_color(rgb(palette.text_muted))
+                        })
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .on_click(move |_, _, cx| {
+                            if let Some(e) = this_tab_engine.upgrade() {
+                                e.update(cx, |app, cx| {
+                                    app.settings_tab = SettingsTab::Engine;
+                                    cx.notify();
+                                });
+                            }
+                        })
+                        .child("Engine"),
+                )
+                .child(
+                    div()
+                        .id("tab-behavior")
+                        .flex_1()
+                        .h_flex()
+                        .items_center()
+                        .justify_center()
+                        .h(px(28.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .when(active_tab == SettingsTab::Behavior, |d| {
+                            d.bg(rgb(palette.card))
+                                .text_color(rgb(palette.text_primary))
+                        })
+                        .when(active_tab != SettingsTab::Behavior, |d| {
+                            d.text_color(rgb(palette.text_muted))
+                        })
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .on_click(move |_, _, cx| {
+                            if let Some(e) = this_tab_behavior.upgrade() {
+                                e.update(cx, |app, cx| {
+                                    app.settings_tab = SettingsTab::Behavior;
+                                    cx.notify();
+                                });
+                            }
+                        })
+                        .child("Behavior"),
+                );
 
             dialog
                 .title("Settings")
-                .w(px(368.))
+                .w(px(372.))
                 .centered()
                 .child(
                     div()
                         .v_flex()
                         .w_full()
                         .gap(px(12.))
-                        .py(px(8.))
-                        .child(
-                            div()
-                                .v_flex()
-                                .gap(px(6.))
-                                .child(
+                        .py(px(6.))
+                        .child(tab_bar)
+                        .when(active_tab == SettingsTab::Engine, |body| {
+                            body.child(
+                                div()
+                                    .v_flex()
+                                    .gap(px(6.))
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(rgb(palette.text_secondary))
+                                            .child("Translator"),
+                                    )
+                                    .child(Select::new(&select_state).w_full()),
+                            )
+                            .when(active_provider.needs_model(), |form| {
+                                form.child(
                                     div()
-                                        .text_xs()
-                                        .text_color(rgb(TEXT_SECONDARY))
-                                        .child("Translator"),
+                                        .v_flex()
+                                        .gap(px(6.))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(rgb(palette.text_secondary))
+                                                .child("Model"),
+                                        )
+                                        .child(Input::new(&model_input).w_full())
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(rgb(palette.text_muted))
+                                                .child(active_provider.recommended_models_hint()),
+                                        ),
                                 )
-                                .child(Select::new(&select_state).w_full()),
-                        )
-                        .when(active_provider.needs_model(), |form| {
-                            form.child(
-                                div()
-                                    .v_flex()
-                                    .gap(px(6.))
-                                    .child(
+                            })
+                            .when(active_provider.needs_api_key(), |form| {
+                                form.child(
+                                    div()
+                                        .v_flex()
+                                        .gap(px(6.))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(rgb(palette.text_secondary))
+                                                .child("API key"),
+                                        )
+                                        .child(Input::new(&api_key_input).w_full().mask_toggle()),
+                                )
+                            })
+                            .when(
+                                active_provider.needs_base_url(),
+                                |form| {
+                                    form.child(
                                         div()
-                                            .text_xs()
-                                            .text_color(rgb(TEXT_SECONDARY))
-                                            .child("Model"),
+                                            .v_flex()
+                                            .gap(px(6.))
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(rgb(palette.text_secondary))
+                                                    .child("Base URL"),
+                                            )
+                                            .child(Input::new(&base_url_input).w_full()),
                                     )
-                                    .child(Input::new(&model_input).w_full())
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(rgb(TEXT_MUTED))
-                                            .child(active_provider.recommended_models_hint()),
-                                    ),
+                                },
                             )
                         })
-                        .when(active_provider.needs_api_key(), |form| {
-                            form.child(
+                        .when(active_tab == SettingsTab::Behavior, |body| {
+                            body.child(
                                 div()
-                                    .v_flex()
-                                    .gap(px(6.))
+                                    .h_flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .w_full()
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_SECONDARY))
-                                            .child("API key"),
+                                            .text_color(rgb(palette.text_secondary))
+                                            .child("Appearance"),
                                     )
-                                    .child(Input::new(&api_key_input).w_full().mask_toggle()),
+                                    .child(Select::new(&theme_select).w(px(140.))),
                             )
-                        })
-                        .when(active_provider.needs_base_url(), |form| {
-                            form.child(
+                            .child(div().w_full().h(px(1.)).bg(rgba(palette.border_hairline)))
+                            .child(
                                 div()
                                     .v_flex()
-                                    .gap(px(6.))
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(rgb(TEXT_SECONDARY))
-                                            .child("Base URL"),
-                                    )
-                                    .child(Input::new(&base_url_input).w_full()),
+                                    .gap(px(10.))
+                                    .child(setting_toggle_row(
+                                        "sw-auto-ocr",
+                                        "Auto-translate after OCR",
+                                        current_prefs.auto_translate_after_ocr,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_auto.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.auto_translate_after_ocr = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    ))
+                                    .child(setting_toggle_row(
+                                        "sw-direct-ai",
+                                        "Direct AI translation (single-hop)",
+                                        current_prefs.direct_target_translation,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_direct.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.direct_target_translation = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    ))
+                                    .child(setting_toggle_row(
+                                        "sw-vision-ocr",
+                                        "Vision AI OCR (image to text)",
+                                        current_prefs.vision_ocr,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_vision.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.vision_ocr = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    ))
+                                    .child(setting_toggle_row(
+                                        "sw-stream",
+                                        "Stream responses",
+                                        current_prefs.streaming_enabled,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_stream.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.streaming_enabled = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    ))
+                                    .child(setting_toggle_row(
+                                        "sw-overlay",
+                                        "Floating HUD overlay after OCR",
+                                        current_prefs.translation_overlay,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_overlay.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.translation_overlay = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    ))
+                                    .child(setting_toggle_row(
+                                        "sw-clipboard",
+                                        "Auto-translate copied clipboard text",
+                                        current_prefs.clipboard_watch,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_clipboard.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.clipboard_watch = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    ))
+                                    .child(setting_toggle_row(
+                                        "sw-keychain",
+                                        "Store API keys in OS Keychain",
+                                        current_prefs.use_keychain,
+                                        palette,
+                                        move |checked, _, cx| {
+                                            if let Some(e) = this_keychain.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.prefs.use_keychain = *checked;
+                                                    app.persist_prefs();
+                                                    cx.notify();
+                                                });
+                                            }
+                                        },
+                                    )),
                             )
-                        })
-                        .child(div().w_full().h(px(1.)).bg(rgba(BORDER_HAIRLINE)))
-                        // Feature switches (Phases 1-3)
-                        .child(
-                            div()
-                                .v_flex()
-                                .gap(px(10.))
-                                .child(setting_toggle_row(
-                                    "sw-auto-ocr",
-                                    "Auto-translate after OCR",
-                                    current_prefs.auto_translate_after_ocr,
-                                    move |checked, _, cx| {
-                                        if let Some(e) = this_auto.upgrade() {
-                                            e.update(cx, |app, cx| {
-                                                app.prefs.auto_translate_after_ocr = *checked;
-                                                app.persist_prefs();
-                                                cx.notify();
-                                            });
-                                        }
-                                    },
-                                ))
-                                .child(setting_toggle_row(
-                                    "sw-direct-ai",
-                                    "Direct AI translation (single-hop)",
-                                    current_prefs.direct_target_translation,
-                                    move |checked, _, cx| {
-                                        if let Some(e) = this_direct.upgrade() {
-                                            e.update(cx, |app, cx| {
-                                                app.prefs.direct_target_translation = *checked;
-                                                app.persist_prefs();
-                                                cx.notify();
-                                            });
-                                        }
-                                    },
-                                ))
-                                .child(setting_toggle_row(
-                                    "sw-vision-ocr",
-                                    "Vision AI OCR (image to text)",
-                                    current_prefs.vision_ocr,
-                                    move |checked, _, cx| {
-                                        if let Some(e) = this_vision.upgrade() {
-                                            e.update(cx, |app, cx| {
-                                                app.prefs.vision_ocr = *checked;
-                                                app.persist_prefs();
-                                                cx.notify();
-                                            });
-                                        }
-                                    },
-                                ))
-                                .child(setting_toggle_row(
-                                    "sw-stream",
-                                    "Stream responses",
-                                    current_prefs.streaming_enabled,
-                                    move |checked, _, cx| {
-                                        if let Some(e) = this_stream.upgrade() {
-                                            e.update(cx, |app, cx| {
-                                                app.prefs.streaming_enabled = *checked;
-                                                app.persist_prefs();
-                                                cx.notify();
-                                            });
-                                        }
-                                    },
-                                ))
-                                .child(setting_toggle_row(
-                                    "sw-keychain",
-                                    "Store API keys in OS Keychain",
-                                    current_prefs.use_keychain,
-                                    move |checked, _, cx| {
-                                        if let Some(e) = this_keychain.upgrade() {
-                                            e.update(cx, |app, cx| {
-                                                app.prefs.use_keychain = *checked;
-                                                app.persist_prefs();
-                                                cx.notify();
-                                            });
-                                        }
-                                    },
-                                )),
-                        ),
+                        }),
                 )
                 .footer(
                     div()
@@ -711,13 +1045,12 @@ impl TranslateApp {
                                 .h(px(32.))
                                 .px(px(14.))
                                 .rounded(px(8.))
-                                .bg(rgb(BG_RAISED))
+                                .bg(rgb(palette.raised))
                                 .border_1()
-                                .border_color(rgba(BORDER_HAIRLINE))
+                                .border_color(rgba(palette.border_hairline))
                                 .text_sm()
-                                .text_color(rgb(TEXT_SECONDARY))
+                                .text_color(rgb(palette.text_secondary))
                                 .cursor_pointer()
-                                .hover(|s| s.text_color(rgb(TEXT_PRIMARY)))
                                 .on_click(|_, window, cx| {
                                     window.close_dialog(cx);
                                 })
@@ -732,12 +1065,11 @@ impl TranslateApp {
                                 .h(px(32.))
                                 .px(px(16.))
                                 .rounded(px(8.))
-                                .bg(rgb(TEXT_PRIMARY))
+                                .bg(rgb(palette.primary_btn_bg))
                                 .text_sm()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(BG_PAGE))
+                                .text_color(rgb(palette.primary_btn_fg))
                                 .cursor_pointer()
-                                .hover(|s| s.opacity(0.92))
                                 .on_click(move |_, window, cx| {
                                     if let Some(selected) =
                                         select_for_save.read(cx).selected_value()
@@ -780,22 +1112,27 @@ impl TranslateApp {
         let this_entity = cx.entity().downgrade();
         let input_entity = self.input_state.clone();
 
-        window.open_dialog(cx, move |dialog, _window, cx| {
+        window.open_dialog(cx, move |dialog, window, cx| {
             let query = search_input.read(cx).value().to_string();
-            let items = this_entity
+            let (items, palette) = this_entity
                 .upgrade()
-                .map(|e| e.read(cx).history.search(&query))
-                .unwrap_or_default();
+                .map(|e| {
+                    let app = e.read(cx);
+                    (app.history.search(&query), app.palette(window))
+                })
+                .unwrap_or((Vec::new(), Palette::DARK));
 
             let this_clear = this_entity.clone();
+            let this_csv = this_entity.clone();
+            let this_md = this_entity.clone();
 
-            let mut list = div().v_flex().w_full().gap(px(8.)).max_h(px(320.));
+            let mut list = div().v_flex().w_full().gap(px(8.)).max_h(px(300.));
             if items.is_empty() {
                 list = list.child(
                     div()
                         .py(px(24.))
                         .text_sm()
-                        .text_color(rgb(TEXT_MUTED))
+                        .text_color(rgb(palette.text_muted))
                         .child("No translation history yet"),
                 );
             } else {
@@ -812,11 +1149,10 @@ impl TranslateApp {
                             .p(px(10.))
                             .gap(px(4.))
                             .rounded(px(8.))
-                            .bg(rgb(BG_RAISED))
+                            .bg(rgb(palette.raised))
                             .border_1()
-                            .border_color(rgba(BORDER_HAIRLINE))
+                            .border_color(rgba(palette.border_hairline))
                             .cursor_pointer()
-                            .hover(|s| s.border_color(rgba(BORDER_SUBTLE)))
                             .on_click(move |_, window, cx| {
                                 input_pick.update(cx, |s, cx| {
                                     s.set_value(entry_clone.source_text.clone(), window, cx);
@@ -840,26 +1176,26 @@ impl TranslateApp {
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_MUTED))
+                                            .text_color(rgb(palette.text_muted))
                                             .child(entry.provider.clone()),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_MUTED))
+                                            .text_color(rgb(palette.text_muted))
                                             .child(entry.timestamp.clone()),
                                     ),
                             )
                             .child(
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(TEXT_PRIMARY))
+                                    .text_color(rgb(palette.text_primary))
                                     .child(entry.primary_english.clone()),
                             )
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb(TEXT_SECONDARY))
+                                    .text_color(rgb(palette.text_secondary))
                                     .child(entry.secondary_localized.clone()),
                             ),
                     );
@@ -868,7 +1204,7 @@ impl TranslateApp {
 
             dialog
                 .title("History")
-                .w(px(368.))
+                .w(px(372.))
                 .centered()
                 .child(
                     div()
@@ -888,37 +1224,67 @@ impl TranslateApp {
                         .pt(px(8.))
                         .child(
                             div()
-                                .id("history-clear-btn")
                                 .h_flex()
                                 .items_center()
                                 .gap(px(6.))
-                                .h(px(32.))
-                                .px(px(12.))
-                                .rounded(px(8.))
-                                .bg(rgb(BG_RAISED))
-                                .border_1()
-                                .border_color(rgba(BORDER_HAIRLINE))
-                                .text_xs()
-                                .text_color(rgb(TEXT_SECONDARY))
-                                .cursor_pointer()
-                                .on_click(move |_, window, cx| {
-                                    if let Some(e) = this_clear.upgrade() {
-                                        e.update(cx, |app, cx| {
-                                            app.history.clear();
-                                            cx.notify();
-                                        });
-                                    }
-                                    window.push_notification(
-                                        Notification::info("History cleared"),
-                                        cx,
-                                    );
-                                })
                                 .child(
-                                    Icon::new(IconName::Trash)
-                                        .size(px(14.))
-                                        .text_color(rgb(TEXT_MUTED)),
+                                    Button::new("hist-export-csv")
+                                        .ghost()
+                                        .icon(IconName::FileDown)
+                                        .label("CSV")
+                                        .tooltip("Export CSV to Downloads")
+                                        .on_click(move |_, window, cx| {
+                                            if let Some(e) = this_csv.upgrade() {
+                                                let path = paths::downloads_dir()
+                                                    .join("translation_history.csv");
+                                                if e.read(cx).history.export_to(&path).is_ok() {
+                                                    cx.reveal_path(&path);
+                                                    window.push_notification(
+                                                        Notification::success("Exported CSV"),
+                                                        cx,
+                                                    );
+                                                }
+                                            }
+                                        }),
                                 )
-                                .child("Clear"),
+                                .child(
+                                    Button::new("hist-export-md")
+                                        .ghost()
+                                        .icon(IconName::FileDown)
+                                        .label("MD")
+                                        .tooltip("Export Markdown to Downloads")
+                                        .on_click(move |_, window, cx| {
+                                            if let Some(e) = this_md.upgrade() {
+                                                let path = paths::downloads_dir()
+                                                    .join("translation_history.md");
+                                                if e.read(cx).history.export_to(&path).is_ok() {
+                                                    cx.reveal_path(&path);
+                                                    window.push_notification(
+                                                        Notification::success("Exported Markdown"),
+                                                        cx,
+                                                    );
+                                                }
+                                            }
+                                        }),
+                                )
+                                .child(
+                                    Button::new("history-clear-btn")
+                                        .ghost()
+                                        .icon(IconName::Trash)
+                                        .tooltip("Clear history")
+                                        .on_click(move |_, window, cx| {
+                                            if let Some(e) = this_clear.upgrade() {
+                                                e.update(cx, |app, cx| {
+                                                    app.history.clear();
+                                                    cx.notify();
+                                                });
+                                            }
+                                            window.push_notification(
+                                                Notification::info("History cleared"),
+                                                cx,
+                                            );
+                                        }),
+                                ),
                         )
                         .child(
                             div()
@@ -929,10 +1295,10 @@ impl TranslateApp {
                                 .h(px(32.))
                                 .px(px(16.))
                                 .rounded(px(8.))
-                                .bg(rgb(TEXT_PRIMARY))
+                                .bg(rgb(palette.primary_btn_bg))
                                 .text_sm()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(BG_PAGE))
+                                .text_color(rgb(palette.primary_btn_fg))
                                 .cursor_pointer()
                                 .on_click(|_, window, cx| {
                                     window.close_dialog(cx);
@@ -948,15 +1314,20 @@ impl TranslateApp {
         let target_input = cx.new(|cx| InputState::new(window, cx).placeholder("Translation"));
         let this_entity = cx.entity().downgrade();
 
-        window.open_dialog(cx, move |dialog, _window, cx| {
-            let entries = this_entity
+        window.open_dialog(cx, move |dialog, window, cx| {
+            let (entries, palette) = this_entity
                 .upgrade()
-                .map(|e| e.read(cx).glossary.entries().to_vec())
-                .unwrap_or_default();
+                .map(|e| {
+                    let app = e.read(cx);
+                    (app.glossary.entries().to_vec(), app.palette(window))
+                })
+                .unwrap_or((Vec::new(), Palette::DARK));
 
             let src_for_add = source_input.clone();
             let tgt_for_add = target_input.clone();
             let this_for_add = this_entity.clone();
+            let this_export = this_entity.clone();
+            let this_import = this_entity.clone();
 
             let mut list = div().v_flex().w_full().gap(px(6.)).max_h(px(220.));
             if entries.is_empty() {
@@ -964,7 +1335,7 @@ impl TranslateApp {
                     div()
                         .py(px(16.))
                         .text_xs()
-                        .text_color(rgb(TEXT_MUTED))
+                        .text_color(rgb(palette.text_muted))
                         .child("Terms added here are injected into AI translation prompts"),
                 );
             } else {
@@ -979,9 +1350,9 @@ impl TranslateApp {
                             .px(px(10.))
                             .py(px(8.))
                             .rounded(px(8.))
-                            .bg(rgb(BG_RAISED))
+                            .bg(rgb(palette.raised))
                             .border_1()
-                            .border_color(rgba(BORDER_HAIRLINE))
+                            .border_color(rgba(palette.border_hairline))
                             .child(
                                 div()
                                     .h_flex()
@@ -990,19 +1361,19 @@ impl TranslateApp {
                                     .child(
                                         div()
                                             .text_sm()
-                                            .text_color(rgb(TEXT_PRIMARY))
+                                            .text_color(rgb(palette.text_primary))
                                             .child(item.source),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_MUTED))
+                                            .text_color(rgb(palette.text_muted))
                                             .child("→"),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
-                                            .text_color(rgb(TEXT_SECONDARY))
+                                            .text_color(rgb(palette.text_secondary))
                                             .child(item.target),
                                     ),
                             )
@@ -1026,7 +1397,7 @@ impl TranslateApp {
 
             dialog
                 .title("Glossary")
-                .w(px(368.))
+                .w(px(372.))
                 .centered()
                 .child(
                     div()
@@ -1074,9 +1445,62 @@ impl TranslateApp {
                     div()
                         .h_flex()
                         .items_center()
-                        .justify_end()
+                        .justify_between()
                         .w_full()
                         .pt(px(8.))
+                        .child(
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .child(
+                                    Button::new("glossary-import-btn")
+                                        .ghost()
+                                        .icon(IconName::Upload)
+                                        .label("Import")
+                                        .tooltip("Import glossary.csv from Downloads")
+                                        .on_click(move |_, window, cx| {
+                                            let path = paths::downloads_dir().join("glossary.csv");
+                                            if let Some(e) = this_import.upgrade() {
+                                                let count = e.update(cx, |app, cx| {
+                                                    let n = app
+                                                        .glossary
+                                                        .import_from(&path)
+                                                        .unwrap_or(0);
+                                                    cx.notify();
+                                                    n
+                                                });
+                                                window.push_notification(
+                                                    Notification::info(format!(
+                                                        "Imported {count} terms from {}",
+                                                        path.display()
+                                                    )),
+                                                    cx,
+                                                );
+                                            }
+                                        }),
+                                )
+                                .child(
+                                    Button::new("glossary-export-btn")
+                                        .ghost()
+                                        .icon(IconName::Download)
+                                        .label("Export")
+                                        .tooltip("Export glossary.csv to Downloads")
+                                        .on_click(move |_, window, cx| {
+                                            if let Some(e) = this_export.upgrade() {
+                                                let path =
+                                                    paths::downloads_dir().join("glossary.csv");
+                                                if e.read(cx).glossary.export_to(&path).is_ok() {
+                                                    cx.reveal_path(&path);
+                                                    window.push_notification(
+                                                        Notification::success("Exported glossary"),
+                                                        cx,
+                                                    );
+                                                }
+                                            }
+                                        }),
+                                ),
+                        )
                         .child(
                             div()
                                 .id("glossary-done-btn")
@@ -1086,10 +1510,10 @@ impl TranslateApp {
                                 .h(px(32.))
                                 .px(px(16.))
                                 .rounded(px(8.))
-                                .bg(rgb(TEXT_PRIMARY))
+                                .bg(rgb(palette.primary_btn_bg))
                                 .text_sm()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(BG_PAGE))
+                                .text_color(rgb(palette.primary_btn_fg))
                                 .cursor_pointer()
                                 .on_click(|_, window, cx| {
                                     window.close_dialog(cx);
@@ -1122,7 +1546,11 @@ impl TranslateApp {
         });
         let this_entity = cx.entity().downgrade();
 
-        window.open_dialog(cx, move |dialog, _window, _cx| {
+        window.open_dialog(cx, move |dialog, window, cx| {
+            let palette = this_entity
+                .upgrade()
+                .map(|e| e.read(cx).palette(window))
+                .unwrap_or(Palette::DARK);
             let select_for_ok = select_state.clone();
             let this_for_ok = this_entity.clone();
 
@@ -1139,7 +1567,7 @@ impl TranslateApp {
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(TEXT_SECONDARY))
+                                .text_color(rgb(palette.text_secondary))
                                 .child("Language"),
                         )
                         .child(Select::new(&select_state).w_full()),
@@ -1161,13 +1589,12 @@ impl TranslateApp {
                                 .h(px(32.))
                                 .px(px(14.))
                                 .rounded(px(8.))
-                                .bg(rgb(BG_RAISED))
+                                .bg(rgb(palette.raised))
                                 .border_1()
-                                .border_color(rgba(BORDER_HAIRLINE))
+                                .border_color(rgba(palette.border_hairline))
                                 .text_sm()
-                                .text_color(rgb(TEXT_SECONDARY))
+                                .text_color(rgb(palette.text_secondary))
                                 .cursor_pointer()
-                                .hover(|s| s.text_color(rgb(TEXT_PRIMARY)))
                                 .on_click(|_, window, cx| {
                                     window.close_dialog(cx);
                                 })
@@ -1182,12 +1609,11 @@ impl TranslateApp {
                                 .h(px(32.))
                                 .px(px(16.))
                                 .rounded(px(8.))
-                                .bg(rgb(TEXT_PRIMARY))
+                                .bg(rgb(palette.primary_btn_bg))
                                 .text_sm()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(BG_PAGE))
+                                .text_color(rgb(palette.primary_btn_fg))
                                 .cursor_pointer()
-                                .hover(|s| s.opacity(0.92))
                                 .on_click(move |_, window, cx| {
                                     if let Some(selected) = select_for_ok.read(cx).selected_value()
                                     {
@@ -1238,6 +1664,7 @@ fn setting_toggle_row(
     id: &'static str,
     label: &'static str,
     checked: bool,
+    palette: Palette,
     on_click: impl Fn(&bool, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     div()
@@ -1245,12 +1672,16 @@ fn setting_toggle_row(
         .items_center()
         .justify_between()
         .w_full()
-        .child(div().text_xs().text_color(rgb(TEXT_SECONDARY)).child(label))
+        .child(
+            div()
+                .text_xs()
+                .text_color(rgb(palette.text_secondary))
+                .child(label),
+        )
         .child(Switch::new(id).checked(checked).on_click(on_click))
 }
 
-/// Signature detail: crisp monospace ISO language code tag.
-fn iso_tag(code: impl Into<SharedString>) -> impl IntoElement {
+fn iso_tag(code: impl Into<SharedString>, p: Palette) -> impl IntoElement {
     div()
         .h_flex()
         .items_center()
@@ -1259,17 +1690,16 @@ fn iso_tag(code: impl Into<SharedString>) -> impl IntoElement {
         .h(px(20.))
         .px(px(6.))
         .rounded(px(4.))
-        .bg(rgb(BG_RAISED))
+        .bg(rgb(p.raised))
         .border_1()
-        .border_color(rgba(BORDER_HAIRLINE))
+        .border_color(rgba(p.border_hairline))
         .text_xs()
         .font_weight(FontWeight::MEDIUM)
-        .text_color(rgb(TEXT_SECONDARY))
+        .text_color(rgb(p.text_secondary))
         .child(code.into())
 }
 
-/// Signature detail: tactile keyboard shortcut keycap.
-fn keycap(label: &'static str) -> impl IntoElement {
+fn keycap(label: &'static str, p: Palette) -> impl IntoElement {
     div()
         .h_flex()
         .items_center()
@@ -1277,16 +1707,17 @@ fn keycap(label: &'static str) -> impl IntoElement {
         .h(px(20.))
         .px(px(6.))
         .rounded(px(4.))
-        .bg(rgb(BG_RAISED))
+        .bg(rgb(p.raised))
         .border_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(p.border_subtle))
         .text_xs()
-        .text_color(rgb(TEXT_MUTED))
+        .text_color(rgb(p.text_muted))
         .child(label)
 }
 
 impl Render for TranslateApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = self.palette(window);
         let current_year = chrono::Local::now().year();
         let primary_text = self.result_primary.clone();
         let secondary_text = self.result_secondary.clone();
@@ -1310,8 +1741,8 @@ impl Render for TranslateApp {
             .v_flex()
             .justify_between()
             .size_full()
-            .bg(rgb(BG_PAGE))
-            .text_color(rgb(TEXT_PRIMARY))
+            .bg(rgb(p.page))
+            .text_color(rgb(p.text_primary))
             .p(px(20.))
             .gap(px(16.))
             // 1. Top Header Bar
@@ -1326,7 +1757,7 @@ impl Render for TranslateApp {
                         div()
                             .text_base()
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(rgb(TEXT_PRIMARY))
+                            .text_color(rgb(p.text_primary))
                             .child("Translate App with AI"),
                     )
                     .child(
@@ -1350,8 +1781,10 @@ impl Render for TranslateApp {
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.prefs.always_on_top = !this.prefs.always_on_top;
                                         this.persist_prefs();
+                                        let _ =
+                                            set_always_on_top(window, this.prefs.always_on_top);
                                         let msg = if this.prefs.always_on_top {
-                                            "Always on top enabled (applies on next launch)"
+                                            "Always on top enabled"
                                         } else {
                                             "Always on top disabled"
                                         };
@@ -1387,9 +1820,9 @@ impl Render for TranslateApp {
                     .p(px(12.))
                     .gap(px(12.))
                     .rounded(px(12.))
-                    .bg(rgb(BG_CARD))
+                    .bg(rgb(p.card))
                     .border_1()
-                    .border_color(rgba(BORDER_HAIRLINE))
+                    .border_color(rgba(p.border_hairline))
                     .child(Input::new(&self.input_state).w_full().cleanable(true))
                     .child(
                         div()
@@ -1407,27 +1840,27 @@ impl Render for TranslateApp {
                                     .h(px(36.))
                                     .px(px(12.))
                                     .rounded(px(8.))
-                                    .bg(rgb(BG_RAISED))
+                                    .bg(rgb(p.raised))
                                     .border_1()
-                                    .border_color(rgba(BORDER_HAIRLINE))
+                                    .border_color(rgba(p.border_hairline))
                                     .cursor_pointer()
-                                    .hover(|s| s.border_color(rgba(BORDER_SUBTLE)))
+                                    .hover(|s| s.border_color(rgba(p.border_subtle)))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.start_ocr(window, cx);
                                     }))
                                     .child(
                                         Icon::new(IconName::Crop)
                                             .size(px(16.))
-                                            .text_color(rgb(TEXT_SECONDARY)),
+                                            .text_color(rgb(p.text_secondary)),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
                                             .font_weight(FontWeight::MEDIUM)
-                                            .text_color(rgb(TEXT_PRIMARY))
+                                            .text_color(rgb(p.text_primary))
                                             .child("Capture"),
                                     )
-                                    .child(keycap(ocr_shortcut)),
+                                    .child(keycap(ocr_shortcut, p)),
                             )
                             .child(
                                 div()
@@ -1439,8 +1872,8 @@ impl Render for TranslateApp {
                                     .h(px(36.))
                                     .px(px(16.))
                                     .rounded(px(8.))
-                                    .bg(rgb(TEXT_PRIMARY))
-                                    .text_color(rgb(BG_PAGE))
+                                    .bg(rgb(p.primary_btn_bg))
+                                    .text_color(rgb(p.primary_btn_fg))
                                     .cursor_pointer()
                                     .hover(|s| s.opacity(0.92))
                                     .on_click(cx.listener(|this, _, window, cx| {
@@ -1449,7 +1882,7 @@ impl Render for TranslateApp {
                                     .child(
                                         Icon::new(IconName::Languages)
                                             .size(px(16.))
-                                            .text_color(rgb(BG_PAGE)),
+                                            .text_color(rgb(p.primary_btn_fg)),
                                     )
                                     .child(
                                         div()
@@ -1468,7 +1901,7 @@ impl Render for TranslateApp {
                             Progress::new("translate-progress")
                                 .w_full()
                                 .loading(true)
-                                .color(rgb(ACCENT_AMBER)),
+                                .color(rgb(p.accent)),
                         )
                     }),
             )
@@ -1479,9 +1912,9 @@ impl Render for TranslateApp {
                     .flex_1()
                     .w_full()
                     .rounded(px(12.))
-                    .bg(rgb(BG_CARD))
+                    .bg(rgb(p.card))
                     .border_1()
-                    .border_color(rgba(BORDER_HAIRLINE))
+                    .border_color(rgba(p.border_hairline))
                     .overflow_hidden()
                     .when(!self.show_results, |sheet| {
                         sheet.child(
@@ -1497,19 +1930,19 @@ impl Render for TranslateApp {
                                         .h_flex()
                                         .items_center()
                                         .gap(px(8.))
-                                        .child(iso_tag("EN"))
+                                        .child(iso_tag("EN", p))
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .text_color(rgb(TEXT_MUTED))
+                                                .text_color(rgb(p.text_muted))
                                                 .child("→"),
                                         )
-                                        .child(iso_tag(target_iso.clone())),
+                                        .child(iso_tag(target_iso.clone(), p)),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(TEXT_SECONDARY))
+                                        .text_color(rgb(p.text_secondary))
                                         .child(
                                             "Enter text above or capture any region on screen to translate into English and your target language.",
                                         ),
@@ -1520,11 +1953,11 @@ impl Render for TranslateApp {
                                         .items_center()
                                         .gap(px(8.))
                                         .pt(px(4.))
-                                        .child(keycap(ocr_shortcut))
+                                        .child(keycap(ocr_shortcut, p))
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .text_color(rgb(TEXT_MUTED))
+                                                .text_color(rgb(p.text_muted))
                                                 .child("Global region OCR capture"),
                                         ),
                                 ),
@@ -1550,39 +1983,61 @@ impl Render for TranslateApp {
                                                     .h_flex()
                                                     .items_center()
                                                     .gap(px(8.))
-                                                    .child(iso_tag("EN"))
+                                                    .child(iso_tag("EN", p))
                                                     .child(
                                                         div()
                                                             .text_xs()
-                                                            .text_color(rgb(TEXT_MUTED))
+                                                            .text_color(rgb(p.text_muted))
                                                             .child("English"),
                                                     ),
                                             )
                                             .child(
-                                                Button::new("copy-primary-btn")
-                                                    .ghost()
-                                                    .icon(IconName::Copy)
-                                                    .tooltip("Copy")
-                                                    .on_click({
-                                                        let text = primary_text.clone();
-                                                        move |_, window, cx| {
-                                                            copy_to_clipboard(&text);
-                                                            window.push_notification(
-                                                                Notification::success("Copied"),
-                                                                cx,
-                                                            );
-                                                        }
-                                                    }),
+                                                div()
+                                                    .h_flex()
+                                                    .items_center()
+                                                    .gap(px(2.))
+                                                    .child(
+                                                        Button::new("tts-primary-btn")
+                                                            .ghost()
+                                                            .icon(IconName::Volume2)
+                                                            .tooltip("Speak")
+                                                            .on_click({
+                                                                let text = primary_text.clone();
+                                                                move |_, _, _| {
+                                                                    speak_text(&text, "en");
+                                                                }
+                                                            }),
+                                                    )
+                                                    .child(
+                                                        Button::new("copy-primary-btn")
+                                                            .ghost()
+                                                            .icon(IconName::Copy)
+                                                            .tooltip("Copy")
+                                                            .on_click(cx.listener({
+                                                                let text = primary_text.clone();
+                                                                move |this, _, window, cx| {
+                                                                    this.clipboard_watcher
+                                                                        .mark_self_copy(&text);
+                                                                    copy_to_clipboard(&text);
+                                                                    window.push_notification(
+                                                                        Notification::success(
+                                                                            "Copied",
+                                                                        ),
+                                                                        cx,
+                                                                    );
+                                                                }
+                                                            })),
+                                                    ),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
-                                            .text_color(rgb(TEXT_PRIMARY))
+                                            .text_color(rgb(p.text_primary))
                                             .child(primary_text.clone()),
                                     ),
                             )
-                            .child(div().w_full().h(px(1.)).bg(rgba(BORDER_HAIRLINE)))
+                            .child(div().w_full().h(px(1.)).bg(rgba(p.border_hairline)))
                             .child(
                                 div()
                                     .v_flex()
@@ -1610,46 +2065,69 @@ impl Render for TranslateApp {
                                                             );
                                                         },
                                                     ))
-                                                    .child(iso_tag(target_iso.clone()))
+                                                    .child(iso_tag(target_iso.clone(), p))
                                                     .child(
                                                         div()
                                                             .text_xs()
-                                                            .text_color(rgb(TEXT_SECONDARY))
+                                                            .text_color(rgb(p.text_secondary))
                                                             .child(target_name.clone()),
                                                     )
                                                     .child(
                                                         Icon::new(IconName::Pencil)
                                                             .size(px(14.))
-                                                            .text_color(rgb(TEXT_MUTED)),
+                                                            .text_color(rgb(p.text_muted)),
                                                     ),
                                             )
                                             .child(
-                                                Button::new("copy-secondary-btn")
-                                                    .ghost()
-                                                    .icon(IconName::Copy)
-                                                    .tooltip("Copy")
-                                                    .on_click({
-                                                        let text = secondary_text.clone();
-                                                        move |_, window, cx| {
-                                                            copy_to_clipboard(&text);
-                                                            window.push_notification(
-                                                                Notification::success("Copied"),
-                                                                cx,
-                                                            );
-                                                        }
-                                                    }),
+                                                div()
+                                                    .h_flex()
+                                                    .items_center()
+                                                    .gap(px(2.))
+                                                    .child(
+                                                        Button::new("tts-secondary-btn")
+                                                            .ghost()
+                                                            .icon(IconName::Volume2)
+                                                            .tooltip("Speak")
+                                                            .on_click({
+                                                                let text = secondary_text.clone();
+                                                                let code = target_iso.clone();
+                                                                move |_, _, _| {
+                                                                    speak_text(&text, &code);
+                                                                }
+                                                            }),
+                                                    )
+                                                    .child(
+                                                        Button::new("copy-secondary-btn")
+                                                            .ghost()
+                                                            .icon(IconName::Copy)
+                                                            .tooltip("Copy")
+                                                            .on_click(cx.listener({
+                                                                let text = secondary_text.clone();
+                                                                move |this, _, window, cx| {
+                                                                    this.clipboard_watcher
+                                                                        .mark_self_copy(&text);
+                                                                    copy_to_clipboard(&text);
+                                                                    window.push_notification(
+                                                                        Notification::success(
+                                                                            "Copied",
+                                                                        ),
+                                                                        cx,
+                                                                    );
+                                                                }
+                                                            })),
+                                                    ),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
-                                            .text_color(rgb(TEXT_PRIMARY))
+                                            .text_color(rgb(p.text_primary))
                                             .child(secondary_text.clone()),
                                     ),
                             )
                     }),
             )
-            // 4. Moment 2: Quiet Bottom Utility Dock + Active Engine & Update Indicator
+            // 4. Moment 2: Quiet Bottom Utility Dock
             .child(
                 div()
                     .v_flex()
@@ -1671,7 +2149,7 @@ impl Render for TranslateApp {
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_MUTED))
+                                            .text_color(rgb(p.text_muted))
                                             .child("OCR"),
                                     )
                                     .child(Select::new(&self.ocr_lang_select).flex_1()),
@@ -1685,11 +2163,11 @@ impl Render for TranslateApp {
                                     .h(px(32.))
                                     .px(px(10.))
                                     .rounded(px(8.))
-                                    .bg(rgb(BG_CARD))
+                                    .bg(rgb(p.card))
                                     .border_1()
-                                    .border_color(rgba(BORDER_HAIRLINE))
+                                    .border_color(rgba(p.border_hairline))
                                     .cursor_pointer()
-                                    .hover(|s| s.bg(rgb(BG_RAISED)))
+                                    .hover(|s| s.bg(rgb(p.raised)))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_settings_dialog(window, cx);
                                     }))
@@ -1697,12 +2175,12 @@ impl Render for TranslateApp {
                                         div()
                                             .size(px(6.))
                                             .rounded_full()
-                                            .bg(rgb(ACCENT_AMBER)),
+                                            .bg(rgb(p.accent)),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_SECONDARY))
+                                            .text_color(rgb(p.text_secondary))
                                             .child(provider_label),
                                     ),
                             )
@@ -1725,7 +2203,7 @@ impl Render for TranslateApp {
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb(TEXT_MUTED))
+                                    .text_color(rgb(p.text_muted))
                                     .child(
                                         self.status_hint
                                             .clone()
@@ -1738,7 +2216,7 @@ impl Render for TranslateApp {
                                     .items_center()
                                     .gap(px(10.))
                                     .when_some(update_info, |row, info| {
-                                        let url = info.release_url.clone();
+                                        let info_clone = info.clone();
                                         row.child(
                                             div()
                                                 .id("update-link")
@@ -1747,15 +2225,19 @@ impl Render for TranslateApp {
                                                 .gap(px(4.))
                                                 .cursor_pointer()
                                                 .text_xs()
-                                                .text_color(rgb(ACCENT_AMBER))
-                                                .on_click(move |_, _, cx| {
-                                                    cx.open_url(&url);
-                                                })
+                                                .text_color(rgb(p.accent))
+                                                .on_click(cx.listener(move |this, _, window, cx| {
+                                                    this.download_update(
+                                                        info_clone.clone(),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                }))
                                                 .child(format!("Update {}", info.latest_version))
                                                 .child(
-                                                    Icon::new(IconName::ArrowUpRight)
+                                                    Icon::new(IconName::Download)
                                                         .size(px(12.))
-                                                        .text_color(rgb(ACCENT_AMBER)),
+                                                        .text_color(rgb(p.accent)),
                                                 ),
                                         )
                                     })
@@ -1764,8 +2246,8 @@ impl Render for TranslateApp {
                                             .id("footer-link")
                                             .cursor_pointer()
                                             .text_xs()
-                                            .text_color(rgb(TEXT_MUTED))
-                                            .hover(|s| s.text_color(rgb(TEXT_SECONDARY)))
+                                            .text_color(rgb(p.text_muted))
+                                            .hover(|s| s.text_color(rgb(p.text_secondary)))
                                             .on_click(|_, _, cx| {
                                                 cx.open_url(
                                                     "https://github.com/watchakorn-18k/Language-Translation-App-using-CHATGPT",
@@ -1799,6 +2281,11 @@ mod tests {
             IconName::Trash,
             IconName::Plus,
             IconName::ArrowUpRight,
+            IconName::Volume2,
+            IconName::FileDown,
+            IconName::Upload,
+            IconName::Download,
+            IconName::X,
         ];
         for icon in icons {
             let path = icon.path();

@@ -1,8 +1,15 @@
 [package]
 name = "language-translation-app"
-version = "6.3.0"
+version = "7.0.0"
 edition = "2024"
 description = "Language Translation App with AI (OpenAI, Gemini, Claude, DeepSeek, Ollama, Google Translate) built in Rust with gpui-kit"
+license = "MIT"
+repository = "https://github.com/watchakorn-18k/Language-Translation-App-using-AI"
+
+[features]
+default = ["builtin-ocr"]
+# Built-in offline OCR engine (ocrs + rten). Models are downloaded on first use.
+builtin-ocr = ["dep:ocrs", "dep:rten"]
 
 [dependencies]
 gpui-kit = "0.10.0"
@@ -18,9 +25,35 @@ arboard = "3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 global-hotkey = "0.10"
 keyring = "4.2"
+dirs = "6"
+raw-window-handle = "0.6"
+ocrs = { version = "0.14", optional = true }
+rten = { version = "0.28", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false }
+objc2-vision = { version = "0.3", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+wiremock = "0.6"
+
+[package.metadata.deb]
+name = "language-translation-app"
+maintainer = "wk18k <noreply@users.noreply.github.com>"
+section = "utils"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/language-translation-app", "usr/bin/", "755"],
+    ["packaging/linux/language-translation-app.desktop", "usr/share/applications/", "644"],
+    ["src/icon.png", "usr/share/icons/hicolor/256x256/apps/language-translation-app.png", "644"],
+]

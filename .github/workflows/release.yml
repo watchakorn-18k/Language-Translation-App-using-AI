@@ -57,13 +57,15 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package macOS .app, .dmg, and .tar.gz
+      - name: Package macOS .app (with AppIcon.icns), .dmg, and .tar.gz
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "master" ]; then VERSION="6.3.0"; fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "master" ]; then VERSION="7.0.0"; fi
 
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" dist/
@@ -73,6 +75,7 @@ jobs:
           APP_DIR="dist/Translate App with AI.app"
           mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
           cp "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "$APP_DIR/Contents/MacOS/${{ matrix.bin_name }}"
+          cp "src/icon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
           chmod +x "$APP_DIR/Contents/MacOS/${{ matrix.bin_name }}"
 
           cat > "$APP_DIR/Contents/Info.plist" <<EOF
@@ -92,6 +95,8 @@ jobs:
             <string>${VERSION}</string>
             <key>CFBundleExecutable</key>
             <string>${{ matrix.bin_name }}</string>
+            <key>CFBundleIconFile</key>
+            <string>AppIcon</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>NSHighResolutionCapable</key>
@@ -99,6 +104,12 @@ jobs:
           </dict>
           </plist>
           EOF
+
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            codesign --force --deep --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP_DIR"
+          else
+            codesign --force --deep --sign - "$APP_DIR" || true
+          fi
 
           mkdir -p dmg_stage
           cp -R "$APP_DIR" dmg_stage/

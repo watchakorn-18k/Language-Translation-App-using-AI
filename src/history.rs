@@ -1,6 +1,10 @@
+use crate::glossary::csv_escape;
+use crate::paths;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_HISTORY_PATH: &str = "translation_history.json";
@@ -25,7 +29,7 @@ pub struct HistoryStore {
 
 impl Default for HistoryStore {
     fn default() -> Self {
-        Self::load(DEFAULT_HISTORY_PATH)
+        Self::load(paths::config_file(DEFAULT_HISTORY_PATH))
     }
 }
 
@@ -64,7 +68,6 @@ impl HistoryStore {
             target_language: target_language.to_string(),
             secondary_localized: secondary_localized.trim().to_string(),
         };
-        // Newest first
         self.entries.insert(0, entry);
         if self.entries.len() > MAX_HISTORY_ENTRIES {
             self.entries.truncate(MAX_HISTORY_ENTRIES);
@@ -104,6 +107,50 @@ impl HistoryStore {
             let _ = fs::write(&self.path, json);
         }
     }
+
+    pub fn to_csv(&self) -> String {
+        let mut out = String::from("timestamp,provider,source,english,target_language,target\n");
+        for e in &self.entries {
+            let _ = writeln!(
+                out,
+                "{},{},{},{},{},{}",
+                csv_escape(&e.timestamp),
+                csv_escape(&e.provider),
+                csv_escape(&e.source_text),
+                csv_escape(&e.primary_english),
+                csv_escape(&e.target_language),
+                csv_escape(&e.secondary_localized)
+            );
+        }
+        out
+    }
+
+    pub fn to_markdown(&self) -> String {
+        let mut out = String::from("# Translation History\n\n");
+        for e in &self.entries {
+            let _ = writeln!(out, "## {} ({})\n", e.timestamp, e.provider);
+            let _ = writeln!(out, "- **Source:** {}", e.source_text);
+            let _ = writeln!(out, "- **English:** {}", e.primary_english);
+            let _ = writeln!(
+                out,
+                "- **{}:** {}\n",
+                e.target_language, e.secondary_localized
+            );
+        }
+        out
+    }
+
+    /// Exports history as `.md` (Markdown) or `.csv` based on the file extension.
+    pub fn export_to(&self, path: &Path) -> io::Result<()> {
+        let is_md = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"));
+        if is_md {
+            fs::write(path, self.to_markdown())
+        } else {
+            fs::write(path, self.to_csv())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -139,8 +186,35 @@ mod tests {
         let mut store = HistoryStore::load(&path);
 
         for i in 0..(MAX_HISTORY_ENTRIES + 15) {
-            store.push("Google Translate", &format!("src {i}"), &format!("en {i}"), "thai", "th");
+            store.push(
+                "Google Translate",
+                &format!("src {i}"),
+                &format!("en {i}"),
+                "thai",
+                "th",
+            );
         }
         assert_eq!(store.entries().len(), MAX_HISTORY_ENTRIES);
+    }
+
+    #[test]
+    fn exports_history_to_csv_and_markdown() {
+        let dir = tempdir().unwrap();
+        let mut store = HistoryStore::load(dir.path().join("h.json"));
+        store.push("OpenAI", "Hello, world", "Hello, world", "thai", "สวัสดี โลก");
+
+        let csv_path = dir.path().join("history.csv");
+        let md_path = dir.path().join("history.md");
+        store.export_to(&csv_path).unwrap();
+        store.export_to(&md_path).unwrap();
+
+        let csv = fs::read_to_string(&csv_path).unwrap();
+        assert!(csv.starts_with("timestamp,provider,source,english,target_language,target\n"));
+        assert!(csv.contains("\"Hello, world\""));
+
+        let md = fs::read_to_string(&md_path).unwrap();
+        assert!(md.starts_with("# Translation History"));
+        assert!(md.contains("**English:** Hello, world"));
+        assert!(md.contains("**thai:** สวัสดี โลก"));
     }
 }

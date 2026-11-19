@@ -193,7 +193,11 @@ pub fn parse_google_translate_response(value: &Value) -> Option<String> {
     let sentences = value.as_array()?.first()?.as_array()?;
     let mut out = String::new();
     for segment in sentences {
-        if let Some(part) = segment.as_array().and_then(|arr| arr.first()).and_then(|v| v.as_str()) {
+        if let Some(part) = segment
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+        {
             out.push_str(part);
         }
     }
@@ -215,7 +219,10 @@ mod tests {
     #[test]
     fn parses_gtx_json_response() {
         let sample = serde_json::json!([
-            [["Hello ", "สวัสดี ", null, null, 1], ["world", "โลก", null, null, 1]],
+            [
+                ["Hello ", "สวัสดี ", null, null, 1],
+                ["world", "โลก", null, null, 1]
+            ],
             null,
             "th"
         ]);

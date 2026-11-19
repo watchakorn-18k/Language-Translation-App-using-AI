@@ -164,15 +164,7 @@ impl Render for SnipperOverlay {
             // 4 dim strips around the selection box so the selected region itself stays crystal clear
             root = root
                 // Top dim strip
-                .child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .w(px(vw))
-                        .h(px(y))
-                        .bg(dim),
-                )
+                .child(div().absolute().top_0().left_0().w(px(vw)).h(px(y)).bg(dim))
                 // Bottom dim strip
                 .child(
                     div()
@@ -232,21 +224,23 @@ impl Render for SnipperOverlay {
                 );
         } else {
             // Fullscreen dim veil + quiet instruction pill before drag starts
-            root = root.child(div().absolute().top_0().left_0().size_full().bg(dim)).child(
-                div()
-                    .absolute()
-                    .top(px(28.))
-                    .left(px((vw / 2.0 - 165.0).max(16.0)))
-                    .px(px(14.))
-                    .py(px(8.))
-                    .rounded(px(8.))
-                    .bg(rgba(0x141415eb))
-                    .border_1()
-                    .border_color(rgba(0xededed1f))
-                    .text_sm()
-                    .text_color(rgb(0xededed))
-                    .child("Drag to select region for OCR  ·  Esc to cancel"),
-            );
+            root = root
+                .child(div().absolute().top_0().left_0().size_full().bg(dim))
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(28.))
+                        .left(px((vw / 2.0 - 165.0).max(16.0)))
+                        .px(px(14.))
+                        .py(px(8.))
+                        .rounded(px(8.))
+                        .bg(rgba(0x141415eb))
+                        .border_1()
+                        .border_color(rgba(0xededed1f))
+                        .text_sm()
+                        .text_color(rgb(0xededed))
+                        .child("Drag to select region for OCR  ·  Esc to cancel"),
+                );
         }
 
         root

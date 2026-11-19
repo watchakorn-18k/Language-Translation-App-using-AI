@@ -169,7 +169,10 @@ pub async fn vision_ocr_and_translate(
                 .and_then(|c| c.get("content"))
                 .and_then(|c| c.get("parts"))
                 .and_then(|p| p.as_array())
-                .and_then(|a| a.iter().find_map(|p| p.get("text").and_then(|t| t.as_str())))
+                .and_then(|a| {
+                    a.iter()
+                        .find_map(|p| p.get("text").and_then(|t| t.as_str()))
+                })
                 .ok_or(ProviderError::EmptyResponse)?
                 .to_string()
         }
@@ -212,7 +215,10 @@ pub async fn vision_ocr_and_translate(
             let val: Value = resp.json().await?;
             val.get("content")
                 .and_then(|c| c.as_array())
-                .and_then(|a| a.iter().find_map(|b| b.get("text").and_then(|t| t.as_str())))
+                .and_then(|a| {
+                    a.iter()
+                        .find_map(|b| b.get("text").and_then(|t| t.as_str()))
+                })
                 .ok_or(ProviderError::EmptyResponse)?
                 .to_string()
         }
